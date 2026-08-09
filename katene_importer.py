@@ -177,8 +177,17 @@ def get_historical_load_summary():
             }
         return {"count": 0, "start_date": "-", "end_date": "-", "total_kwh": 0.0}
 
-def get_hourly_average_demand():
-    """過去ログデータから時間帯(0時〜23時)ごとの平均消費電力量(kWh)を算出する"""
+def get_hourly_average_demand(target_month=None):
+    """
+    過去ログデータから、指定された月（1〜12）、または指定がない場合は翌日の月の
+    時間帯（0時〜23時）ごとの平均消費電力量(kWh)を算出する。
+    季節変動（エアコン等の使用）を反映した正確な予測を実現します。
+    """
+    import datetime
+    if target_month is None:
+        tomorrow = datetime.date.today() + datetime.timedelta(days=1)
+        target_month = tomorrow.month
+
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='historical_load'")
@@ -187,18 +196,33 @@ def get_hourly_average_demand():
                               0.5, 0.4, 0.4, 0.5, 0.6, 0.8, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4]
             return default_hourly
         
+        # 指定された月（例: 8月なら '08'）の過去データを抽出
+        month_str = f"{target_month:02d}"
         cursor.execute('''
             SELECT hour, AVG(load_kwh) as avg_kwh
             FROM historical_load
+            WHERE strftime('%m', timestamp) = ?
             GROUP BY hour
             ORDER BY hour ASC
-        ''')
+        ''', (month_str,))
         rows = cursor.fetchall()
+        
+        # 対象の月のデータがない場合は、全期間の平均でフォールバック
+        if not rows:
+            cursor.execute('''
+                SELECT hour, AVG(load_kwh) as avg_kwh
+                FROM historical_load
+                GROUP BY hour
+                ORDER BY hour ASC
+            ''')
+            rows = cursor.fetchall()
+
         if not rows:
             return [0.5] * 24
         
         avg_profile = [row['avg_kwh'] for row in rows]
         return avg_profile
+
 
 if __name__ == "__main__":
     summary = get_historical_load_summary()

@@ -2,7 +2,7 @@ import yaml
 from weather_service import WeatherService
 from database import save_daily_schedule
 from katene_importer import get_hourly_average_demand
-from datetime import date
+from datetime import date, timedelta
 
 class PostFitOptimizer:
     def __init__(self, config_path="config.yaml"):
@@ -22,8 +22,9 @@ class PostFitOptimizer:
         today = date.today()
         is_fit_active = (today <= fit_end)
         
-        # 2. 過去ログに基づく時間帯別平均消費電力プロファイル(24h)の取得
-        hourly_demand_profile = get_hourly_average_demand()
+        # 2. 過去ログに基づく時間帯別平均消費電力プロファイル(24h)の取得 (翌日の季節変動を考慮)
+        tomorrow = today + timedelta(days=1)
+        hourly_demand_profile = get_hourly_average_demand(target_month=tomorrow.month)
         est_load_kwh = sum(hourly_demand_profile)
         
         # 3. 翌日太陽光予測発電量 (kWh) の取得
