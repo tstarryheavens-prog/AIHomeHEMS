@@ -399,11 +399,18 @@ client = NichiconEchonetClient(enabled=config.get("nichicon", {}).get("enabled",
 batt_sys_info = client.get_full_system_info()
 cmd_status = st.session_state.get("last_battery_cmd_status")
 
+fit_end_date_str = config.get("fit_setting", {}).get("fit_end_date", "2026-11-27")
+try:
+    fit_end_formatted = datetime.strptime(fit_end_date_str, "%Y-%m-%d").strftime("%Y/%m/%d")
+except Exception:
+    fit_end_formatted = fit_end_date_str.replace("-", "/")
+
 st.warning(
-    "💡 **中部電力「スマートライフプラン【夜とく】」(21時〜7時) × 蓄電池寿命最得制御**:\n"
-    "・**🔋 寿命保護JIT充電 (03:00〜06:30)**: 朝の使用直前3.5時間で急速充電し、100%満充電保持時間を極小化！蓄電池の寿命を最大化します。\n"
-    "・**💰 31円利ざや売電 (〜2026/11/29)**: 昼間(7-21時)は `0x43 (放電/売電優先)` で太陽光(31.0円/kWh)を全量売電！深夜16.3円との差額 `+14.7円/kWh` の純利益を追及！"
+    f"💡 **中部電力「スマートライフプラン【夜とく】」(21時〜7時) × 蓄電池寿命最得制御**:\n"
+    f"・**🔋 寿命保護JIT充電 (03:00〜06:30)**: 朝の使用直前3.5時間で急速充電し、100%満充電保持時間を極小化！蓄電池の寿命を最大化します。\n"
+    f"・**💰 31円利ざや売電 (〜{fit_end_formatted})**: 昼間(7-21時)は `0x43 (放電/売電優先)` で太陽光(31.0円/kWh)を全量売電！深夜16.3円との差額 `+14.7円/kWh` の純利益を追及！"
 )
+
 
 # ⏰ 現在設定されている蓄電池の充放電時間帯可視化パネル
 st.markdown("#### ⏰ 現在の蓄電池 充放電タイマー設定スケジュール")

@@ -32,17 +32,18 @@ class PostFitOptimizer:
         est_pv_kwh = tomorrow_pv_info["total_pv_kwh"]
         
         if is_fit_active:
-            # 💰 FIT期間中 (〜2026/11/29): 売電単価 31円/kWh ＞ 深夜単価 16.30円/kWh
+            # 💰 FIT期間中: 売電単価 31円/kWh ＞ 深夜単価 16.30円/kWh
             # 最得戦略: 深夜(23-7時)に16.3円で100%充電し、昼間太陽光(31円)は全量売電＆昼間消費は蓄電池から供給
             target_night_soc = 100.0
             reason = (
-                f"【FIT高額売電モード適用中 (〜2026/11/29まで 売電31.0円/kWh)】\n"
+                f"【FIT高額売電モード適用中 (〜{fit_end.strftime('%Y/%m/%d')}まで 売電31.0円/kWh)】\n"
                 f"中部電力「夜とく」の格安深夜電力(16.30円/kWh)で蓄電池を100%まで充電(0x42)。\n"
                 f"昼間は太陽光発電(31円/kWh)を最大限売電(0x43 放電/売電優先)し、差額利益 (+14.7円/kWh) を最大化します。"
             )
         else:
-            # 🌿 卒FIT後 (2026/11/30〜): 買電単価 36円/kWh ＞ 売電単価 8.5円/kWh
+            # 🌿 卒FIT後: 買電単価 36円/kWh ＞ 売電単価 8.5円/kWh
             # 最得戦略: 自家消費グリーンモード(0x45)優先。翌日PV余剰分だけ受入スペースを空けて深夜充電
+
             est_surplus_pv_kwh = max(0.0, est_pv_kwh - est_load_kwh)
             needed_battery_kwh_from_pv = min(self.battery_capacity_kwh, est_surplus_pv_kwh)
             needed_night_charge_kwh = max(0.0, self.battery_capacity_kwh - needed_battery_kwh_from_pv)

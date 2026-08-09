@@ -49,14 +49,14 @@ def fetch_hems_web_status(hems_config=None):
     except Exception as e:
         return f"OFFLINE ({str(e)})"
 
-def check_and_apply_time_based_battery_schedule(client):
+def check_and_apply_time_based_battery_schedule(client, config=None):
     """
     中部電力「夜とく」(21:00〜07:00 16.30円/kWh) × 蓄電池寿命最適化 (JIT充電 03:00〜06:30)
     - 蓄電池寿命保護戦略:
       21:00から充電すると夜中ずっと100%満充電で放置され劣化が進むため、
       朝の利用直前 (03:00〜06:30) にピンポイント充電(JIT充電)し、100%保持時間を極小化して寿命を延ばします。
-    - FIT期間中 (〜2026/11/29): 昼間(7:00〜21:00)は 0x43 (31.0円/kWh 高額売電)
-    - 卒FIT後 (2026/11/30〜): 昼間(7:00〜21:00)は 0x45 (自家消費・グリーン)
+    - FIT期間中 (〜2026/11/27): 昼間(7:00〜21:00)は 0x43 (31.0円/kWh 高額売電)
+    - 卒FIT後 (2026/11/28〜): 昼間(7:00〜21:00)は 0x45 (自家消費・グリーン)
     """
     try:
         now_dt = datetime.now(JST)
@@ -69,7 +69,17 @@ def check_and_apply_time_based_battery_schedule(client):
         # 蓄電池寿命最適化 JIT充電時間帯 (03:00〜06:30)
         is_jit_charge_time = (3 <= now_hour < 6) or (now_hour == 6 and now_minute <= 30)
         
-        fit_end = datetime(2026, 11, 29, 23, 59, 59, tzinfo=JST)
+        # FIT期限の動的判定
+        if config is None:
+            try:
+                with open("config.yaml", "r", encoding="utf-8") as f:
+                    config = yaml.safe_load(f)
+            except Exception:
+                config = {}
+        
+        fit_end_str = config.get("fit_setting", {}).get("fit_end_date", "2026-11-27")
+        fit_end_date = datetime.strptime(fit_end_str, "%Y-%m-%d").date()
+        fit_end = datetime(fit_end_date.year, fit_end_date.month, fit_end_date.day, 23, 59, 59, tzinfo=JST)
         is_fit_active = (now_dt <= fit_end)
         
         from database import get_latest_schedule
@@ -106,7 +116,7 @@ def poll_and_log_all_data(config_path="config.yaml"):
     nichicon_port = config.get("nichicon", {}).get("port", 3610)
     
     client = NichiconEchonetClient(ip_address=nichicon_ip, port=nichicon_port, enabled=True)
-    check_and_apply_time_based_battery_schedule(client)
+    check_and_apply_time_based_battery_schedule(client, config=config)
     info = client.get_full_system_info()
     
     hems_config = config.get("hems_controller", {})
