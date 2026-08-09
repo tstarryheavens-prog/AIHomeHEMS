@@ -1,0 +1,26 @@
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# Databases
+hems.db
+hems.db-journal
+hems.db-wal
+
+# Log files
+*.log
+hems_data_log.csv
+hems_full_telemetry_log.csv
+
+# Local settings (sensitive information)
+config.yaml

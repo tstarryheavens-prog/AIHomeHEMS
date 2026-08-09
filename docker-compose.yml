@@ -1,0 +1,15 @@
+services:
+
+  hems:
+    image: python:3.10-slim
+    container_name: hems-app
+    restart: always
+    # ホストのネットワークモードを使用 (ECHONETのマルチキャスト機器スキャンを通すため、またポートバインドをシンプルにするため)
+    network_mode: host
+    environment:
+      - TZ=Asia/Tokyo
+    volumes:
+      # プロジェクトフォルダ丸ごとマウントすることで、sqlite DB (hems.db)、CSVログ、config.yaml の永続化とホスト側での容易な編集を実現
+      - .:/app
+    working_dir: /app
+    entrypoint: /app/entrypoint.sh
