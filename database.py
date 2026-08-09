@@ -185,3 +185,170 @@ def get_latest_schedule():
         cursor.execute("SELECT * FROM daily_schedule ORDER BY created_at DESC LIMIT 1")
         row = cursor.fetchone()
         return dict(row) if row else None
+
+def get_battery_health_metrics():
+    """
+    直近7日間の telemetry 履歴から、満充電(SOC >= 95%)で維持された時間(時間/日)を算出し、
+    従来の常時満充電（1日あたり10時間放置）と比較して「削減された満充電放置時間」および「寿命保護スコア」を計算します。
+    """
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        
+        # 履歴データがない場合はデフォルトの初期値を返す
+        cursor.execute("SELECT MIN(timestamp), MAX(timestamp) FROM telemetry")
+        row_range = cursor.fetchone()
+        if not row_range or not row_range[0]:
+            return {
+                "avg_full_soc_hours_per_day": 3.0,
+                "saved_hours_per_day": 7.0,
+                "life_protection_score": 70,
+                "health_grade": "A (良好・寿命保護中)",
+                "total_telemetry_days": 0
+            }
+            
+        # SOC>=95% のデータ件数を取得
+        cursor.execute('''
+            SELECT 
+                COUNT(*) as total_records,
+                SUM(CASE WHEN battery_soc >= 95 THEN 1 ELSE 0 END) as full_soc_records,
+                (MAX(strftime('%s', timestamp)) - MIN(strftime('%s', timestamp))) / 86400.0 as total_days
+            FROM telemetry
+            WHERE timestamp >= datetime('now', '-7 days')
+        ''')
+        row = cursor.fetchone()
+        
+        # もし直近7日間のデータが非常に少ない場合は、全体期間で再集計
+        if not row or row['total_records'] < 10:
+            cursor.execute('''
+                SELECT 
+                    COUNT(*) as total_records,
+                    SUM(CASE WHEN battery_soc >= 95 THEN 1 ELSE 0 END) as full_soc_records,
+                    (MAX(strftime('%s', timestamp)) - MIN(strftime('%s', timestamp))) / 86400.0 as total_days
+                FROM telemetry
+            ''')
+            row = cursor.fetchone()
+
+        if not row or row['total_records'] == 0:
+            return {
+                "avg_full_soc_hours_per_day": 3.0,
+                "saved_hours_per_day": 7.0,
+                "life_protection_score": 70,
+                "health_grade": "A (良好・寿命保護中)",
+                "total_telemetry_days": 0
+            }
+
+        total_days = max(0.1, float(row['total_days']))
+        
+        # 測定データの間隔（秒）を推定（通常30秒に1回取得）
+        cursor.execute("SELECT MIN(timestamp), MAX(timestamp), COUNT(*) FROM telemetry")
+        time_range = cursor.fetchone()
+        if time_range and time_range[2] > 1:
+            try:
+                min_t = datetime.strptime(time_range[0], "%Y-%m-%d %H:%M:%S")
+                max_t = datetime.strptime(time_range[1], "%Y-%m-%d %H:%M:%S")
+                interval_sec = (max_t - min_t).total_seconds() / time_range[2]
+            except Exception:
+                interval_sec = 30.0
+        else:
+            interval_sec = 30.0
+
+        # 満充電放置時間の総計(時間) = レコード数 * 測定間隔(秒) / 3600
+        total_full_soc_hours = (row['full_soc_records'] * interval_sec) / 3600.0
+        
+        # 1日あたりの平均満充電時間
+        avg_full_soc_hours = round(total_full_soc_hours / total_days, 2)
+        
+        # 従来の放置時間（例：10時間/日と仮定）に対する削減時間
+        # JIT充電により、従来の10時間満充電放置をどれだけ短縮できたか
+        conventional_full_soc_hours = 10.0
+        saved_hours = max(0.0, conventional_full_soc_hours - avg_full_soc_hours)
+        saved_hours = round(min(conventional_full_soc_hours, saved_hours), 2)
+        
+        # 寿命保護スコア (0〜100)
+        score = int((saved_hours / conventional_full_soc_hours) * 100)
+        
+        # 健康グレード
+        if score >= 90:
+            grade = "S (極めて良好)"
+        elif score >= 75:
+            grade = "A (良好・寿命保護中)"
+        elif score >= 50:
+            grade = "B (通常運用)"
+        else:
+            grade = "C (要設定調整)"
+            
+        return {
+            "avg_full_soc_hours_per_day": avg_full_soc_hours,
+            "saved_hours_per_day": saved_hours,
+            "life_protection_score": score,
+            "health_grade": grade,
+            "total_telemetry_days": round(total_days, 1)
+        }
+
+def get_self_sufficiency_data():
+    """
+    過去30日間の hems_daily_history から日別の自給自足率(%)の推移、および全体の平均自給率を算出します。
+    """
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        
+        # hems_daily_historyテーブルが存在するか確認
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='hems_daily_history'")
+        if not cursor.fetchone():
+            return {"daily_data": [], "average_percent": 0.0}
+            
+        cursor.execute('''
+            SELECT 
+                date_str,
+                load_kwh,
+                buy_kwh,
+                self_kwh,
+                self_sufficiency_percent
+            FROM hems_daily_history
+            WHERE load_kwh > 0
+            ORDER BY date_str DESC
+            LIMIT 30
+        ''')
+        rows = cursor.fetchall()
+        
+        daily_list = []
+        total_load = 0.0
+        total_self = 0.0
+        
+        for row in reversed(rows):
+            load = row['load_kwh'] or 0.0
+            buy = row['buy_kwh'] or 0.0
+            self_kwh = row['self_kwh'] or 0.0
+            
+            pct = 0.0
+            if load > 0:
+                if self_kwh > 0:
+                    pct = (self_kwh / load) * 100.0
+                elif buy > 0:
+                    pct = max(0.0, (1.0 - (buy / load)) * 100.0)
+                else:
+                    pct = row['self_sufficiency_percent'] or 0.0
+            
+            pct = min(100.0, round(pct, 1))
+            
+            daily_list.append({
+                "date": row['date_str'],
+                "self_sufficiency_percent": pct,
+                "load_kwh": round(load, 2),
+                "self_kwh": round(self_kwh, 2)
+            })
+            
+            total_load += load
+            total_self += self_kwh if self_kwh > 0 else (load - buy)
+
+        # 平均自給率の計算
+        avg_pct = 0.0
+        if total_load > 0:
+            avg_pct = max(0.0, min(100.0, (total_self / total_load) * 100.0))
+            
+        return {
+            "daily_data": daily_list,
+            "average_percent": round(avg_pct, 1)
+        }
+
+

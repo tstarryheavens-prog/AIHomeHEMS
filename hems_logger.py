@@ -63,36 +63,47 @@ def check_and_apply_time_based_battery_schedule(client, config=None):
         now_hour = now_dt.hour
         now_minute = now_dt.minute
         
-        # 中部電力「夜とく」ナイトタイム判定 (21:00〜07:00)
-        is_yorytoku_night = (now_hour >= 21 or now_hour < 7)
+        # 1. Storm Watch (気象警報連動防災モード) の判定
+        from weather_service import WeatherService
+        weather = WeatherService()
+        warnings_info = weather.check_jma_warnings()
         
-        # 蓄電池寿命最適化 JIT充電時間帯 (03:00〜06:30)
-        is_jit_charge_time = (3 <= now_hour < 6) or (now_hour == 6 and now_minute <= 30)
-        
-        # FIT期限の動的判定
-        if config is None:
-            try:
-                with open("config.yaml", "r", encoding="utf-8") as f:
-                    config = yaml.safe_load(f)
-            except Exception:
-                config = {}
-        
-        fit_end_str = config.get("fit_setting", {}).get("fit_end_date", "2026-11-27")
-        fit_end_date = datetime.strptime(fit_end_str, "%Y-%m-%d").date()
-        fit_end = datetime(fit_end_date.year, fit_end_date.month, fit_end_date.day, 23, 59, 59, tzinfo=JST)
-        is_fit_active = (now_dt <= fit_end)
-        
-        from database import get_latest_schedule
-        latest_sched = get_latest_schedule()
-        target_soc = latest_sched.get("target_night_soc", 0) if latest_sched else 0
-
-        if is_jit_charge_time and target_soc > 50:
-            target_mode = 0x42 # 深夜JIT急速充電モード (03:00〜06:30)
+        if warnings_info.get("has_warning", False):
+            # 警報発令中：強制満充電・バックアップ専用モード (0x42 / 急速充電)
+            target_mode = 0x42
         else:
-            if is_fit_active:
-                target_mode = 0x43 # FIT期間中昼間: 31円高額売電・放電優先モード
+            # 2. 通常スケジュール制御
+            # 中部電力「夜とく」ナイトタイム判定 (21:00〜07:00)
+            is_yorytoku_night = (now_hour >= 21 or now_hour < 7)
+            
+            # 蓄電池寿命最適化 JIT充電時間帯 (03:00〜06:30)
+            is_jit_charge_time = (3 <= now_hour < 6) or (now_hour == 6 and now_minute <= 30)
+            
+            # FIT期限の動的判定
+            if config is None:
+                try:
+                    with open("config.yaml", "r", encoding="utf-8") as f:
+                        config = yaml.safe_load(f)
+                except Exception:
+                    config = {}
+            
+            fit_end_str = config.get("fit_setting", {}).get("fit_end_date", "2026-11-27")
+            fit_end_date = datetime.strptime(fit_end_str, "%Y-%m-%d").date()
+            fit_end = datetime(fit_end_date.year, fit_end_date.month, fit_end_date.day, 23, 59, 59, tzinfo=JST)
+            is_fit_active = (now_dt <= fit_end)
+            
+            from database import get_latest_schedule
+            latest_sched = get_latest_schedule()
+            target_soc = latest_sched.get("target_night_soc", 0) if latest_sched else 0
+
+            if is_jit_charge_time and target_soc > 50:
+                target_mode = 0x42 # 深夜JIT急速充電モード (03:00〜06:30)
             else:
-                target_mode = 0x45 # 卒FIT後昼間: 自家消費・グリーンモード
+                if is_fit_active:
+                    target_mode = 0x43 # FIT期間中昼間: 31円高額売電・放電優先モード
+                else:
+                    target_mode = 0x45 # 卒FIT後昼間: 自家消費・グリーンモード
+
 
         info = client.get_full_system_info()
         curr_mode = info.get("mode", "AUTO")

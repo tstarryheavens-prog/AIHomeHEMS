@@ -91,6 +91,69 @@ class WeatherService:
             })
         return result
 
+    def check_jma_warnings(self):
+        """
+        気象庁の警報情報APIから、名古屋市(2310000)の現在の警報発表状況を取得する
+        警報（特別警報含む）が発表されている場合は詳細な情報を返す
+        """
+        url = "https://www.jma.go.jp/bosai/warning/data/warning/230000.json"
+        
+        # 警報コードと名前のマッピング
+        jma_codes = {
+            "32": "暴風警報", "33": "大雨警報", "35": "暴風警報", "36": "大雪警報",
+            "37": "暴風雪警報", "38": "波浪警報", "40": "高潮警報",
+            "53": "大雨特別警報", "55": "暴風特別警報", "56": "大雪特別警報",
+            "57": "暴風雪特別警報", "58": "波浪特別警報", "60": "高潮特別警報"
+        }
+        
+        try:
+            res = requests.get(url, timeout=10)
+            res.raise_for_status()
+            data = res.json()
+            
+            nagoya_code = "2310000"
+            area_types = data.get("areaTypes", [])
+            
+            active_alerts = []
+            for at in area_types:
+                areas = at.get("areas", [])
+                for area in areas:
+                    if area.get("code") == nagoya_code:
+                        warnings = area.get("warnings", [])
+                        for w in warnings:
+                            code = w.get("code")
+                            status = w.get("status")
+                            if code and status in ["発表", "継続"]:
+                                try:
+                                    code_val = int(code)
+                                    # 32番台以上は警報・特別警報レベル (31以下の注意報等は除外)
+                                    if code_val >= 32:
+                                        alert_name = jma_codes.get(code, f"その他警報 (コード: {code})")
+                                        active_alerts.append({
+                                            "code": code,
+                                            "name": alert_name,
+                                            "status": status
+                                        })
+                                except ValueError:
+                                    pass
+            
+            return {
+                "has_warning": len(active_alerts) > 0,
+                "warnings": active_alerts,
+                "status": "active" if len(active_alerts) > 0 else "clear",
+                "last_checked": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            
+        except Exception as e:
+            print(f"[WeatherService] Error checking JMA warnings: {e}")
+            return {
+                "has_warning": False,
+                "warnings": [],
+                "status": "error",
+                "error_msg": str(e),
+                "last_checked": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+
 if __name__ == "__main__":
     service = WeatherService()
     tomorrow_pv = service.get_tomorrow_pv_estimate()
