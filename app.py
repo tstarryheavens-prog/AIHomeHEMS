@@ -790,8 +790,8 @@ with tab3:
                 height=320
             ).configure_view(
                 strokeOpacity=0
-            ).configure_background(
-                fill='transparent'
+            ).configure(
+                background='transparent'
             )
             st.altair_chart(chart, use_container_width=True)
 
