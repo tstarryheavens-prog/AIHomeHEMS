@@ -9,7 +9,8 @@ python3 -c "import database; database.init_db()"
 
 # バックグラウンドスケジューラを起動
 echo "⚡ Starting HEMS background scheduler..."
-python3 scheduler.py &
+python3 -u scheduler.py &
+
 
 # Streamlit を起動 (0.0.0.0でバインドして外部アクセスを許可)
 echo "⚡ Starting Streamlit UI on port 8501..."

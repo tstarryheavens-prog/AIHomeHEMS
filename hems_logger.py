@@ -94,7 +94,25 @@ def check_and_apply_time_based_battery_schedule(client, config=None):
             
             from database import get_latest_schedule
             latest_sched = get_latest_schedule()
-            target_soc = latest_sched.get("target_night_soc", 0) if latest_sched else 0
+            
+            # 安全フォールバック: DBにスケジュールがない、または日付が古い場合の対応
+            target_soc = 0
+            is_schedule_valid = False
+            if latest_sched:
+                sched_date = latest_sched.get("target_date")
+                # 昨夜23:00計算のスケジュールは対象日が「翌日（＝今日）」になっているため有効
+                # sched_date (例: 2026-08-10) が現在の年月日 (JST) 以上であれば有効と判定
+                today_str = now_dt.strftime("%Y-%m-%d")
+                if sched_date and sched_date >= today_str:
+                    target_soc = latest_sched.get("target_night_soc", 0)
+                    is_schedule_valid = True
+                    
+            if not is_schedule_valid:
+                # AI予測スケジュールが取得できなかった場合の安全デフォルト（FIT期間中は100%充電、卒FIT後は50%充電）
+                if is_fit_active:
+                    target_soc = 100.0
+                else:
+                    target_soc = 50.0
 
             if is_jit_charge_time and target_soc > 50:
                 target_mode = 0x42 # 深夜JIT急速充電モード (03:00〜06:30)
@@ -103,7 +121,6 @@ def check_and_apply_time_based_battery_schedule(client, config=None):
                     target_mode = 0x43 # FIT期間中昼間: 31円高額売電・放電優先モード
                 else:
                     target_mode = 0x45 # 卒FIT後昼間: 自家消費・グリーンモード
-
 
         info = client.get_full_system_info()
         curr_mode = info.get("mode", "AUTO")
