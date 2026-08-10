@@ -157,10 +157,30 @@ st.markdown(
         color: #ffffff !important;
         box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
     }
+    
+    /* 📱 iPhoneダークモード視認性強化: ボタンの白文字・高コントラスト固定 */
+    div.stButton > button {
+        background-color: #1e293b !important;
+        color: #ffffff !important;
+        border: 1px solid #3b82f6 !important;
+        border-radius: 8px !important;
+        transition: all 0.2s ease-in-out !important;
+        font-weight: 700 !important;
+        font-size: 0.95rem !important;
+    }
+    div.stButton > button:hover {
+        background-color: #3b82f6 !important;
+        color: #ffffff !important;
+        box-shadow: 0 0 10px rgba(59, 130, 246, 0.5) !important;
+    }
+    div.stButton > button:active, div.stButton > button:focus {
+        color: #ffffff !important;
+    }
     </style>
     """,
     unsafe_allow_html=True
 )
+
 
 # ⚙️ モバイル用クイック操作パネル (スマホではサイドバーが隠れるためメイン画面にも折りたたみで配置)
 with st.expander("⚙️ モバイル用クイックシステム設定・操作", expanded=False):
@@ -586,7 +606,48 @@ with tab3:
         st.metric("🩺 バッテリー健康グレード", health['health_grade'])
     with h_col3:
         st.metric("🌱 平均エネルギー自給率", f"{self_suff['average_percent']}%", help="過去30日間の総消費量に対する太陽光・蓄電池供給率")
-        
+
+    # ==========================================
+    # 🌲 経済効果 ＆ エコ貢献度統計 (直近30日の実績)
+    # ==========================================
+    st.markdown("#### 🌲 直近30日間のエネマネ経済効果 ＆ エコ削減貢献度")
+    h_history_30 = get_hems_daily_history(limit=30, filter_zero=True)
+    self_kwh_sum = 0
+    buy_kwh_sum = 0
+    sale_kwh_sum = 0
+    if h_history_30:
+        self_kwh_sum = sum([r.get("self_kwh", 0) or 0 for r in h_history_30])
+        buy_kwh_sum = sum([r.get("buy_kwh", 0) or 0 for r in h_history_30])
+        sale_kwh_sum = sum([r.get("sale_kwh", 0) or 0 for r in h_history_30])
+    
+    co2_kg = self_kwh_sum * 0.435
+    sugi_trees = co2_kg / 14.0
+    
+    # 2026-11-27までのFIT判定
+    from datetime import datetime, timezone, timedelta
+    JST = timezone(timedelta(hours=9))
+    now_dt_check = datetime.now(JST)
+    fit_end_str_check = config.get("fit_setting", {}).get("fit_end_date", "2026-11-27")
+    try:
+        fit_end_date_check = datetime.strptime(fit_end_str_check, "%Y-%m-%d").date()
+    except Exception:
+        fit_end_date_check = datetime(2026, 11, 27).date()
+    fit_end_check = datetime(fit_end_date_check.year, fit_end_date_check.month, fit_end_date_check.day, 23, 59, 59, tzinfo=JST)
+    is_fit_active_check = (now_dt_check <= fit_end_check)
+
+    # 経済削減効果：太陽光の自家消費節約(36円単価) ＋ 深夜充電した電力の昼間放電による利益(利ざや14.7円)
+    solar_savings = self_kwh_sum * 36.0
+    arbitrage_savings = (buy_kwh_sum * 0.8) * (31.0 - 16.30) if is_fit_active_check else 0
+    total_savings = solar_savings + arbitrage_savings
+
+    eco_col1, eco_col2, eco_col3 = st.columns(3)
+    with eco_col1:
+        st.metric("💰 今月の削減経済効果 (概算)", f"¥{int(round(total_savings)):,}", help="太陽光自家消費分(買電削減) ＋ 夜間充電利ざやによる節約の合計額")
+    with eco_col2:
+        st.metric("📉 CO2排出削減量", f"{co2_kg:.1f} kg-CO2", help="太陽光自家消費により削減された二酸化炭素排出量")
+    with eco_col3:
+        st.metric("🌲 杉の木換算本数", f"{sugi_trees:.1f} 本", help="削減したCO2を杉の木(1本年14kg吸収)に換算した際の本数")
+
     st.markdown(
         f"""
         <div class="glass-card" style="margin-top: 10px; margin-bottom: 20px;">
@@ -594,7 +655,7 @@ with tab3:
             <p style="margin: 0; font-size: 0.95rem; line-height: 1.6;">
                 朝の利用直前にピンポイント満充電を行う「JIT(Just In Time)急速充電窓」制御により、<br>
                 1日あたり平均 <strong>{health['saved_hours_per_day']} 時間</strong> の満充電放置時間を削減できています。<br>
-                これにより、高電圧放置によるバッテリー内部の劣化を抑制し、長期間の寿命維持を強力にサポートしています。<br>
+                これにより、高電圧放置によるバッテリー内部の劣化を抑制し、長期間 of 寿命維持を強力にサポートしています。<br>
                 <small style="color: #94a3b8;">※ 集計対象ログ日数: {health['total_telemetry_days']} 日</small>
             </p>
         </div>
@@ -602,11 +663,37 @@ with tab3:
         unsafe_allow_html=True
     )
     
+    # ==========================================
+    # 🩺 ニチコン詳細診断 (マニア向けECHONET Lite詳細情報)
+    # ==========================================
+    st.markdown("#### 🔌 ニチコンT5 蓄電池システム・詳細診断 (マニア向け)")
+    with st.expander("🩺 ECHONET Lite デバイス生データ ＆ システム内部状態", expanded=False):
+        if batt_sys_info:
+            d_col1, d_col2 = st.columns(2)
+            with d_col1:
+                st.markdown("**🔋 蓄電デバイス状態 (Class 0x027D)**")
+                st.write(f"・**接続IP / Port**: `{config.get('nichicon', {}).get('ip_address', '192.168.2.12')}:{config.get('nichicon', {}).get('port', 3610)}`")
+                st.write(f"・**動作モード (EPC 0xDA)**: `{batt_sys_info.get('mode', 'UNKNOWN')}`")
+                st.write(f"・**現在の蓄電SOC (EPC 0xE7)**: `{batt_sys_info.get('soc', 0)} %`")
+                st.write(f"・**現在の残容量Wh (EPC 0xE2)**: `{batt_sys_info.get('battery_wh', 0):,} Wh`")
+                st.write(f"・**定格充電能力 (EPC 0xD0)**: `5,900 W` (実機設定値)")
+                st.write(f"・**定格放電能力 (EPC 0xD1)**: `5,900 W` (実機設定値)")
+            with d_col2:
+                st.markdown("**📊 累積充放電電力 / 太陽光統計**")
+                st.write(f"・**瞬時充放電電力 (EPC 0xD3)**: `{batt_sys_info.get('power_w', 0):,} W` (+:充電, -:放電)")
+                st.write(f"・**累積充電電力量 (EPC 0xE5)**: `{batt_sys_info.get('cum_charge_kwh', 0):,} kWh` (寿命累計)")
+                st.write(f"・**累積放電電力量 (EPC 0xE4)**: `{batt_sys_info.get('cum_discharge_kwh', 0):,} kWh` (寿命累計)")
+                st.write(f"・**太陽光瞬時発電 (EPC 0xE0)**: `{batt_sys_info.get('pv_w', 0):,} W`")
+                st.write(f"・**太陽光累積発電 (EPC 0xE1)**: `{batt_sys_info.get('cum_pv_kwh', 0):,} kWh` (累計)")
+        else:
+            st.warning("蓄電池とのECHONET Lite通信が遮断されているか、シミュレーションモードのため詳細情報を取得できません。")
+
     if self_suff["daily_data"]:
         st.markdown("#### 📈 直近30日間の日別エネルギー自給率推移")
         import pandas as pd
         df_suff = pd.DataFrame(self_suff["daily_data"])
         st.line_chart(df_suff.set_index("date")["self_sufficiency_percent"])
+
     
     st.divider()
 
@@ -614,6 +701,7 @@ with tab3:
     
     limit_map = {
         "📅 全期間 過去全ログ (約35,000件 / 過去全データ)": 100000,
+        "📅 直近 48時間 (約34,560件)": 34560,
         "📅 直近 24時間 (約17,280件)": 17280,
         "🕕 直近 6時間 (約4,320件)": 4320,
         "🕐 直近 1時間 (約720件)": 720,
@@ -635,53 +723,97 @@ with tab3:
             "表示対象の期間選択:",
             [
                 "📅 全期間 過去全ログ (約35,000件 / 過去全データ)",
+                "📅 直近 48時間 (約34,560件)",
                 "📅 直近 24時間 (約17,280件)",
                 "🕕 直近 6時間 (約4,320件)",
                 "🕐 直近 1時間 (約720件)",
                 "⏱️ 直近 10分 (120件)"
             ],
-            index=0,
+            index=2, # デフォルトは直近24時間
             key="trend_range_option_main"
         )
         
-    fetch_limit = limit_map.get(range_option, 100000)
+    fetch_limit = limit_map.get(range_option, 17280)
     
     telemetry_hist = get_recent_telemetry(limit=fetch_limit)
     if telemetry_hist:
         df_th = pd.DataFrame(telemetry_hist)
         df_th["timestamp"] = pd.to_datetime(df_th["timestamp"])
-        df_th = df_th.sort_values("timestamp").set_index("timestamp")
+        df_th = df_th.sort_values("timestamp")
         
         num_cols = [c for c in ["pv_w", "grid_w", "battery_w", "battery_soc"] if c in df_th.columns]
         
-        if len(df_th) > 2000:
-            df_th_plot = df_th[num_cols].resample('1min').mean().dropna()
+        # スマホ表示速度向上のためのデータリサンプリング (間引き・平均化)
+        df_th_index = df_th.set_index("timestamp")
+        if len(df_th) > 10000:
+            df_th_plot = df_th_index[num_cols].resample('10min').mean().dropna()
+        elif len(df_th) > 2000:
+            df_th_plot = df_th_index[num_cols].resample('2min').mean().dropna()
         else:
-            df_th_plot = df_th[num_cols]
+            df_th_plot = df_th_index[num_cols]
+            
+        st.caption(f"📊 表示中データ: {len(df_th_plot):,} 件 (元データ: {len(df_th):,} 件) | 期間: `{df_th_index.index.min().strftime('%Y-%m-%d %H:%M')}` 〜 `{df_th_index.index.max().strftime('%Y-%m-%d %H:%M')}`")
         
-        st.caption(f"📊 表示中データ: {len(df_th_plot):,} 件 (元データ: {len(df_th):,} 件) | 期間: `{df_th.index.min().strftime('%Y-%m-%d %H:%M')}` 〜 `{df_th.index.max().strftime('%Y-%m-%d %H:%M')}`")
-    
+        import altair as alt
+        
+        # 高コントラスト＆ユニバーサルデザインのAltair描画用関数
+        def draw_altair_chart(df, y_cols, y_label):
+            df_reset = df.reset_index()
+            # 凡例名をわかりやすく変換
+            rename_dict = {
+                "pv_w": "太陽光発電 (W)",
+                "grid_w": "買電/売電電力 (W)",
+                "battery_w": "蓄電池充放電 (W)",
+                "battery_soc": "蓄電池 SOC (%)"
+            }
+            df_plot_renamed = df_reset.rename(columns=rename_dict)
+            plot_cols = [rename_dict[c] for c in y_cols if c in rename_dict]
+            
+            df_melt = df_plot_renamed.melt("timestamp", value_vars=plot_cols, var_name="指標", value_name="値")
+            
+            # カラーパレットの設定 (ユニバーサルデザイン)
+            color_scale = alt.Scale(
+                domain=["太陽光発電 (W)", "買電/売電電力 (W)", "蓄電池充放電 (W)", "蓄電池 SOC (%)"],
+                range=["#fbbf24", "#f87171", "#38bdf8", "#34d399"] # 黄、赤、青、緑
+            )
+            
+            chart = alt.Chart(df_melt).mark_line(interpolate='monotone', strokeWidth=2).encode(
+                x=alt.X('timestamp:T', title='時間 (JST)', axis=alt.Axis(format='%m/%d %H:%M', grid=True, gridColor='rgba(255,255,255,0.07)', labelColor='#94a3b8', titleColor='#94a3b8')),
+                y=alt.Y('値:Q', title=y_label, axis=alt.Axis(grid=True, gridColor='rgba(255,255,255,0.07)', labelColor='#94a3b8', titleColor='#94a3b8')),
+                color=alt.Color('指標:N', scale=color_scale, legend=alt.Legend(title="指標一覧", labelColor='#f1f5f9', titleColor='#f1f5f9')),
+                tooltip=[
+                    alt.Tooltip('timestamp:T', title='時刻', format='%Y-%m-%d %H:%M'),
+                    alt.Tooltip('指標:N', title='項目'),
+                    alt.Tooltip('値:Q', title='電力値/残量')
+                ]
+            ).properties(
+                height=320
+            ).configure_view(
+                strokeOpacity=0
+            ).configure_background(
+                fill='transparent'
+            )
+            st.altair_chart(chart, use_container_width=True)
+
         if chart_option == "☀️ 太陽光発電 (W)":
             st.markdown("##### ☀️ 太陽光発電電力 (PV W) の過去推移")
-            st.line_chart(df_th_plot[["pv_w"]].rename(columns={"pv_w": "太陽光発電 (W)"}))
+            draw_altair_chart(df_th_plot, ["pv_w"], "電力 (W)")
         elif chart_option == "⚡ 買電電力 (W)":
             st.markdown("##### ⚡ 買電/売電電力 (Grid W) の過去推移 (+:買電, -:売電)")
-            st.line_chart(df_th_plot[["grid_w"]].rename(columns={"grid_w": "買電/売電電力 (W)"}))
+            draw_altair_chart(df_th_plot, ["grid_w"], "電力 (W)")
         elif chart_option == "🔋 蓄電池 SOC (%) ＆ 充放電 (W)":
             st.markdown("##### 🔋 蓄電池 SOC (%) の過去推移")
-            st.line_chart(df_th_plot[["battery_soc"]].rename(columns={"battery_soc": "蓄電池 SOC (%)"}))
+            draw_altair_chart(df_th_plot, ["battery_soc"], "蓄電池残量 (%)")
             st.markdown("##### 🔋 蓄電池 充放電電力 (W) の過去推移 (+:充電, -:放電)")
-            st.line_chart(df_th_plot[["battery_w"]].rename(columns={"battery_w": "充放電電力 (W)"}))
+            draw_altair_chart(df_th_plot, ["battery_w"], "充放電電力 (W)")
         else:
-            st.markdown("##### 📊 全電力指標（過去全データの重ね合わせ比較）")
-            st.line_chart(df_th_plot[["pv_w", "grid_w", "battery_w"]].rename(columns={
-                "pv_w": "太陽光発電 (W)",
-                "grid_w": "買電電力 (W)",
-                "battery_w": "蓄電池充放電 (W)"
-            }))
-            st.line_chart(df_th_plot[["battery_soc"]].rename(columns={"battery_soc": "蓄電池 SOC (%)"}))
-    
+            st.markdown("##### 📊 全電力指標（重ね合わせ比較）")
+            draw_altair_chart(df_th_plot, ["pv_w", "grid_w", "battery_w"], "電力 (W)")
+            st.markdown("##### 🔋 蓄電池 SOC (%) の過去推移")
+            draw_altair_chart(df_th_plot, ["battery_soc"], "蓄電池残量 (%)")
+            
     st.divider()
+
     
     # ==========================================
     # 📊 5. HEMS 実機 ＆ CSV過去ログ実績（電力量kWh ＆ 電気代円）

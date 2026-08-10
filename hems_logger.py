@@ -41,56 +41,62 @@ def fetch_hems_web_status(hems_config=None):
             r = session.get(login_url, params=params, timeout=3)
             if r.status_code == 200:
                 return f"AUTHENTICATED (ID: {user_id})"
-        else:
-            r = session.get(f"http://{hems_ip}/", timeout=2)
-            if r.status_code == 200:
-                return "ONLINE (Login Required)"
         return "OFFLINE"
     except Exception as e:
         return f"OFFLINE ({str(e)})"
 
 def check_and_apply_time_based_battery_schedule(client, config=None):
+
     """
     中部電力「夜とく」(21:00〜07:00 16.30円/kWh) × 蓄電池寿命最適化 (JIT充電 03:00〜06:30)
     - 蓄電池寿命保護戦略:
       21:00から充電すると夜中ずっと100%満充電で放置され劣化が進むため、
       朝の利用直前 (03:00〜06:30) にピンポイント充電(JIT充電)し、100%保持時間を極小化して寿命を延ばします。
-    - FIT期間中 (〜2026/11/27): 昼間(7:00〜21:00)は 0x43 (31.0円/kWh 高額売電)
+    - FIT期間中 (〜2026/11/27): 昼間(7:00〜21:00)は 0x43 (31.0円/kWh 放電・売電優先)
     - 卒FIT後 (2026/11/28〜): 昼間(7:00〜21:00)は 0x45 (自家消費・グリーン)
+    - 昼間充電の完全禁止: 07:00〜23:00 の間は、気象警報（Storm Watch）発表時を除き、絶対に 0x42 (強制充電) を禁止。
     """
+    now_dt = datetime.now(JST)
+    now_hour = now_dt.hour
+    now_minute = now_dt.minute
+    
+    # 昼間時間帯の判定 (07:00〜23:00)
+    is_daytime = (7 <= now_hour < 23)
+    
+    # デフォルト設定ロード
+    if config is None:
+        try:
+            with open("config.yaml", "r", encoding="utf-8") as f:
+                config = yaml.safe_load(f)
+        except Exception:
+            config = {}
+            
+    fit_end_str = config.get("fit_setting", {}).get("fit_end_date", "2026-11-27")
     try:
-        now_dt = datetime.now(JST)
-        now_hour = now_dt.hour
-        now_minute = now_dt.minute
-        
+        fit_end_date = datetime.strptime(fit_end_str, "%Y-%m-%d").date()
+    except Exception:
+        fit_end_date = datetime(2026, 11, 27).date()
+    fit_end = datetime(fit_end_date.year, fit_end_date.month, fit_end_date.day, 23, 59, 59, tzinfo=JST)
+    is_fit_active = (now_dt <= fit_end)
+
+    target_mode = 0x45 # 初期デフォルト：自動/グリーン
+
+    try:
         # 1. Storm Watch (気象警報連動防災モード) の判定
         from weather_service import WeatherService
         weather = WeatherService()
         warnings_info = weather.check_jma_warnings()
         
-        if warnings_info.get("has_warning", False):
+        has_storm_warning = warnings_info.get("has_warning", False)
+        
+        if has_storm_warning:
             # 警報発令中：強制満充電・バックアップ専用モード (0x42 / 急速充電)
             target_mode = 0x42
+            print(f"[HEMSLogger] Storm Watch Active! Forcing CHARGE mode (0x42).")
         else:
             # 2. 通常スケジュール制御
-            # 中部電力「夜とく」ナイトタイム判定 (21:00〜07:00)
-            is_yorytoku_night = (now_hour >= 21 or now_hour < 7)
-            
             # 蓄電池寿命最適化 JIT充電時間帯 (03:00〜06:30)
             is_jit_charge_time = (3 <= now_hour < 6) or (now_hour == 6 and now_minute <= 30)
-            
-            # FIT期限の動的判定
-            if config is None:
-                try:
-                    with open("config.yaml", "r", encoding="utf-8") as f:
-                        config = yaml.safe_load(f)
-                except Exception:
-                    config = {}
-            
-            fit_end_str = config.get("fit_setting", {}).get("fit_end_date", "2026-11-27")
-            fit_end_date = datetime.strptime(fit_end_str, "%Y-%m-%d").date()
-            fit_end = datetime(fit_end_date.year, fit_end_date.month, fit_end_date.day, 23, 59, 59, tzinfo=JST)
-            is_fit_active = (now_dt <= fit_end)
             
             from database import get_latest_schedule
             latest_sched = get_latest_schedule()
@@ -100,8 +106,6 @@ def check_and_apply_time_based_battery_schedule(client, config=None):
             is_schedule_valid = False
             if latest_sched:
                 sched_date = latest_sched.get("target_date")
-                # 昨夜23:00計算のスケジュールは対象日が「翌日（＝今日）」になっているため有効
-                # sched_date (例: 2026-08-10) が現在の年月日 (JST) 以上であれば有効と判定
                 today_str = now_dt.strftime("%Y-%m-%d")
                 if sched_date and sched_date >= today_str:
                     target_soc = latest_sched.get("target_night_soc", 0)
@@ -109,10 +113,7 @@ def check_and_apply_time_based_battery_schedule(client, config=None):
                     
             if not is_schedule_valid:
                 # AI予測スケジュールが取得できなかった場合の安全デフォルト（FIT期間中は100%充電、卒FIT後は50%充電）
-                if is_fit_active:
-                    target_soc = 100.0
-                else:
-                    target_soc = 50.0
+                target_soc = 100.0 if is_fit_active else 50.0
 
             if is_jit_charge_time and target_soc > 50:
                 target_mode = 0x42 # 深夜JIT急速充電モード (03:00〜06:30)
@@ -122,14 +123,51 @@ def check_and_apply_time_based_battery_schedule(client, config=None):
                 else:
                     target_mode = 0x45 # 卒FIT後昼間: 自家消費・グリーンモード
 
-        info = client.get_full_system_info()
-        curr_mode = info.get("mode", "AUTO")
-        expected_str = "CHARGE" if target_mode == 0x42 else ("DISCHARGE" if target_mode == 0x43 else "AUTO")
+        # 🛑 昼間充電の完全禁止ガード (フェイルセーフの徹底)
+        # 昼間 (07:00〜23:00) 帯に、Storm Watch警報が出ていない通常状態の場合、
+        # 意図しないバグや狂ったAI計画により 0x42 (急速充電) に切り替わることを強制ロックアウトします。
+        if is_daytime and not has_storm_warning and target_mode == 0x42:
+            print("[HEMSLogger] Warning: Prevented illegal DAYTIME charge (0x42) schedule! Fallback to AUTO/GREEN.")
+            target_mode = 0x45 if not is_fit_active else 0x43
 
-        if curr_mode != expected_str:
-            client.set_battery_mode(target_mode)
-    except Exception:
-        pass
+    except Exception as e:
+        # 重大な例外（DB障害、API崩壊など）が発生した場合の究極のフェイルセーフフォールバック
+        print(f"[HEMSLogger] CRITICAL ERROR in schedule logic: {e}. Executing fail-safe fallback.")
+        # 深夜JIT充電帯なら 0x42、昼間なら 0x45(自家消費優先・安全モード)
+        is_jit_charge_time = (3 <= now_hour < 6) or (now_hour == 6 and now_minute <= 30)
+        if is_jit_charge_time:
+            target_mode = 0x42
+        else:
+            target_mode = 0x45 if not is_fit_active else 0x43
+
+    # ニチコンへのコマンド送信処理（3回自動リトライループ）
+    success = False
+    for attempt in range(1, 4):
+        try:
+            info = client.get_full_system_info()
+            curr_mode = info.get("mode", "AUTO")
+            expected_str = "CHARGE" if target_mode == 0x42 else ("DISCHARGE" if target_mode == 0x43 else "AUTO")
+
+            if curr_mode != expected_str:
+                print(f"[HEMSLogger] Command: Set Nichicon mode to {expected_str} (target: {hex(target_mode)}) (Attempt {attempt}/3)...")
+                res = client.set_battery_mode(target_mode)
+                if res:
+                    print(f"[HEMSLogger] Command successful on attempt {attempt}.")
+                    success = True
+                    break
+                else:
+                    raise IOError("Nichicon client returned False on mode modification request.")
+            else:
+                success = True # すでに期待状態
+                break
+        except Exception as ex:
+            print(f"[HEMSLogger] Nichicon communication failed (Attempt {attempt}/3): {ex}")
+            if attempt < 3:
+                time.sleep(1.5) # 次のリトライまでウェイト
+                
+    if not success:
+        print("[HEMSLogger] CRITICAL: Failed to update battery mode after 3 attempts.")
+
 
 def poll_and_log_all_data(config_path="config.yaml"):
     """
