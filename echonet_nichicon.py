@@ -96,14 +96,20 @@ class NichiconEchonetClient:
         dis_val = int.from_bytes(edt_dis, byteorder='big') if edt_dis else 0
         cha_val = int.from_bytes(edt_cha, byteorder='big') if edt_cha else 0
 
-        # ニチコンT5固有処理: EPC 0xE7 が非対応無効値 (0x3B9AC9FF / 999999999) を返す場合、
-        # EPC 0xE2 (残容量Wh) と EPC 0xD0 (定格容量Wh) から正確な SOC% を物理演算算出
-        raw_soc = int.from_bytes(edt_soc, byteorder='big', signed=False) if edt_soc else 999999999
-        if len(edt_soc or []) == 1 and raw_soc <= 100:
-            soc_val = raw_soc
-        else:
-            if rated_wh_val > 0 and wh_val > 0:
-                soc_val = min(100, max(0, int(round((wh_val / float(rated_wh_val)) * 100))))
+        # ニチコンT5固有処理: 
+        # EPC 0xE7 は Nichicon T5 実機仕様により無効値 0x3B9AC9FF (999999999) を返します。
+        # したがって、残容量Wh (EPC 0xE2) と 14.9kWh (定格 14,900 Wh) から正確な SOC% を物理演算算出します。
+        soc_val = None
+        if edt_soc and len(edt_soc) == 1:
+            raw_b = edt_soc[0]
+            if 0 <= raw_b <= 100:
+                soc_val = raw_b
+
+        if soc_val is None:
+            # 14.9kWh ニチコンT5 蓄電池容量 (14900 Wh)
+            capacity_wh = 14900
+            if wh_val >= 0:
+                soc_val = min(100, max(0, int(round((wh_val / float(capacity_wh)) * 100))))
             else:
                 soc_val = 50
 
