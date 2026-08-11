@@ -735,8 +735,8 @@ def render_tab1_live():
     
     st.divider()
 
-    # 2. 各部屋・分電盤回路の消費電力モニタリング（横棒グラフ ＋ 右側数値）
-    st.markdown("### 🏠 各部屋・回路別の消費電力モニタリング (リアルタイム現在値)")
+    # 2. 🏠 各部屋・回路別電力分析 ＆ ⚠️ 待機電力/つけっぱなし検知アラート
+    st.markdown("### 🏠 部屋別・分電盤回路の電力分析 ＆ ⚠️ 待機電力アラート")
     rooms = latest_log.get("rooms", {})
     
     room_items = [
@@ -748,85 +748,130 @@ def render_tab1_live():
         ("⚡ その他回路", rooms.get("その他回路", 0))
     ]
     
-    max_w = max([v for _, v in room_items] + [100])
+    total_room_w = sum([v for _, v in room_items])
     
-    bars_html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <style>
-    body {{
-        margin: 0;
-        padding: 0;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        background-color: transparent;
-        color: #ffffff;
-    }}
-    .bar-box {{
-        background: rgba(15, 23, 42, 0.85);
-        border: 1px solid #334155;
-        border-radius: 12px;
-        padding: 10px 14px;
-        box-shadow: 0 6px 15px rgba(0,0,0,0.3);
-    }}
-    .room-row {{
-        display: flex;
-        align-items: center;
-        margin-bottom: 10px;
-    }}
-    .room-row:last-child {{
-        margin-bottom: 0;
-    }}
-    .room-label {{
-        width: 130px;
-        font-weight: 700;
-        color: #e2e8f0;
-        font-size: 0.95rem;
-    }}
-    .bar-track {{
-        flex-grow: 1;
-        background: #1e293b;
-        border-radius: 8px;
-        height: 18px;
-        border: 1px solid #475569;
-        overflow: hidden;
-        margin: 0 14px;
-    }}
-    .bar-fill {{
-        height: 100%;
-        background: linear-gradient(90deg, #3b82f6 0%, #60a5fa 100%);
-        border-radius: 6px;
-        transition: width 0.4s ease-in-out;
-    }}
-    .room-val {{
-        width: 80px;
-        text-align: right;
-        font-weight: 800;
-        font-size: 1.15rem;
-        color: #38bdf8;
-    }}
-    </style>
-    </head>
-    <body>
-    <div class="bar-box">
-    """
-    for label, val in room_items:
-        w_val = int(round(val))
-        pct = max(2, min(100, int((w_val / max_w) * 100)))
-        bars_html += f"""
-        <div class="room-row">
-            <div class="room-label">{label}</div>
-            <div class="bar-track"><div class="bar-fill" style="width:{pct}%;"></div></div>
-            <div class="room-val">{w_val:,} W</div>
-        </div>
-        """
-    bars_html += """
-    </div>
-    </body>
-    </html>
-    """
+    # ⚠️ 無駄電力・つけっぱなし自動判定アラート
+    alerts = []
+    aircon_w = rooms.get("エアコン", 0)
+    living_w = rooms.get("リビング", 0)
+    master_bed_w = rooms.get("主寝室", 0)
+    kids_room_w = rooms.get("子供部屋", 0)
+    
+    now_hour = datetime.now(JST).hour
+    
+    if aircon_w > 800:
+        alerts.append(f"❄️ **エアコン高負荷検知 ({int(aircon_w)}W)**: 消費電力が急増しています。設定温度の見直しをおすすめします。")
+    if (now_hour >= 23 or now_hour < 6) and (living_w + kids_room_w > 350):
+        alerts.append(f"⚠️ **深夜の消費電力警告 ({int(living_w + kids_room_w)}W)**: 深夜帯にリビングや子供部屋で照明・テレビの消し忘れの可能性があります。")
+    if total_room_w > 0 and (total_room_w < 120):
+        alerts.append(f"💡 **待機電力（ゴーストロード）検出中 ({int(total_room_w)}W)**: 宅内全体の基本待機電力です。（約 {int(total_room_w * 24 * 365 / 1000 * 31 / 12):,} 円/月）")
 
-    components.html(bars_html, height=240)
+    if alerts:
+        for alert_msg in alerts:
+            st.warning(alert_msg)
+    else:
+        st.success("🟢 **省エネ運転中**: 部屋別の異常な電力消費や消し忘れは検出されていません。")
+
+    col_r1, col_r2 = st.columns([1.2, 1])
+
+    with col_r1:
+        max_w = max([v for _, v in room_items] + [100])
+        bars_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <style>
+        body {{
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: transparent;
+            color: #ffffff;
+        }}
+        .bar-box {{
+            background: rgba(15, 23, 42, 0.85);
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 10px 14px;
+            box-shadow: 0 6px 15px rgba(0,0,0,0.3);
+        }}
+        .room-row {{
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }}
+        .room-row:last-child {{
+            margin-bottom: 0;
+        }}
+        .room-label {{
+            width: 130px;
+            font-weight: 700;
+            color: #e2e8f0;
+            font-size: 0.9rem;
+        }}
+        .bar-track {{
+            flex-grow: 1;
+            background: #1e293b;
+            border-radius: 8px;
+            height: 16px;
+            border: 1px solid #475569;
+            overflow: hidden;
+            margin: 0 10px;
+        }}
+        .bar-fill {{
+            height: 100%;
+            background: linear-gradient(90deg, #3b82f6 0%, #60a5fa 100%);
+            border-radius: 6px;
+        }}
+        .room-val {{
+            width: 75px;
+            text-align: right;
+            font-weight: 800;
+            font-size: 1.05rem;
+            color: #38bdf8;
+        }}
+        </style>
+        </head>
+        <body>
+        <div class="bar-box">
+        """
+        for label, val in room_items:
+            w_val = int(round(val))
+            pct = max(2, min(100, int((w_val / max_w) * 100)))
+            bars_html += f"""
+            <div class="room-row">
+                <div class="room-label">{label}</div>
+                <div class="bar-track"><div class="bar-fill" style="width:{pct}%;"></div></div>
+                <div class="room-val">{w_val:,} W</div>
+            </div>
+            """
+        bars_html += """
+        </div>
+        </body>
+        </html>
+        """
+        components.html(bars_html, height=240)
+
+    with col_r2:
+        # 🥧 部屋別消費電力のグラフィカル内訳ドーナツチャート (Altair)
+        import altair as alt
+        df_rooms = pd.DataFrame([
+            {"部屋・回路": label.split(" ")[1] if " " in label else label, "電力W": max(0.1, val)}
+            for label, val in room_items
+        ])
+        
+        pie_chart = alt.Chart(df_rooms).mark_arc(innerRadius=45, outerRadius=85).encode(
+            theta=alt.Theta(field="電力W", type="quantitative"),
+            color=alt.Color(field="部屋・回路", type="nominal", scale=alt.Scale(scheme="category10"), legend=alt.Legend(orient="right", labelColor="#e2e8f0")),
+            tooltip=[alt.Tooltip("部屋・回路:N"), alt.Tooltip("電力W:Q", format=",.0f", title="電力 (W)")]
+        ).properties(
+            height=230
+        ).configure_view(
+            strokeOpacity=0
+        ).configure(
+            background='transparent'
+        )
+        st.altair_chart(pie_chart, use_container_width=True)
 
 with tab1:
     try:
