@@ -144,18 +144,29 @@ if latest_sched:
     load_est_val = int(round(latest_sched.get('est_load_kwh', 0)))
     
     if pv_est_val > 15:
-        reason_desc = f"☀️ 翌日の予想発電量（{pv_est_val}kWh）が十分に大きいため、深夜充電を {target_soc_val}% に抑え、太陽光の余剰電力を充電する空き枠を確保します。"
+        reason_desc = (
+            f"翌日予想発電量 {pv_est_val}kWh。<br>"
+            f"十分な日照予測のため、深夜充電を {target_soc_val}% に抑制。<br>"
+            f"太陽光余剰充電枠を確保。"
+        )
     elif pv_est_val < 5:
-        reason_desc = f"☁️ 翌日の予想発電量（{pv_est_val}kWh）が極めて少なく日中に不足するため、深夜の最安電力（16.3円）で {target_soc_val}% まで満タンに充電して備えます。"
+        reason_desc = (
+            f"翌日予想発電量 {pv_est_val}kWh。<br>"
+            f"日中の不足電力を補うため、深夜最安料金帯に {target_soc_val}% 急速充電。<br>"
+            f"昼間の買電量を最小化。"
+        )
     else:
-        reason_desc = f"⛅ 翌日予想発電（{pv_est_val}kWh）と消費予測（{load_est_val}kWh）のバランスから、最も経済効果が高くなる深夜充電目標 {target_soc_val}% を算定しました。"
+        reason_desc = (
+            f"翌日予想発電量 {pv_est_val}kWh、予想消費量 {load_est_val}kWh。<br>"
+            f"充放電バランスと経済効果を最大化する深夜充電目標 {target_soc_val}% を算定。"
+        )
 
 st.markdown(
     f"""
     <div class="glass-card" style="padding: 10px 14px; margin-bottom: 12px; border-color: rgba(59, 130, 246, 0.25); background: rgba(30, 41, 59, 0.5); margin-top: -20px;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-            <span style="color:#60a5fa; font-weight:800; font-size:0.85rem;">🤖 AI最適化スケジュール・計画根拠</span>
-            <span style="font-size:0.75rem; background:rgba(59, 130, 246, 0.15); padding:2px 6px; border-radius:4px; color:#60a5fa; font-weight:700;">v2.3 OS</span>
+            <span style="color:#60a5fa; font-weight:800; font-size:0.85rem;">🤖 AI最適化予測・充電計画</span>
+            <span style="font-size:0.75rem; background:rgba(59, 130, 246, 0.15); padding:2px 6px; border-radius:4px; color:#60a5fa; font-weight:700;">v2.4 OS</span>
         </div>
         <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px; margin-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:6px; text-align:center;">
             <div>
@@ -172,7 +183,7 @@ st.markdown(
             </div>
         </div>
         <div style="font-size:0.75rem; color:#ffffff; line-height:1.45; font-weight:600;">
-            📝 <strong>算定根拠</strong>: {reason_desc}
+            {reason_desc}
         </div>
     </div>
     """,
@@ -188,6 +199,13 @@ st.markdown(
     .stApp {
         background-color: #0b0f19;
         color: #e2e8f0;
+    }
+    
+    /* Streamlitのデフォルトヘッダー（白い帯）を完全に非表示にし、モバイルでの白飛びを完全防止 */
+    header[data-testid="stHeader"], .stAppHeader {
+        display: none !important;
+        background-color: transparent !important;
+        background: transparent !important;
     }
     
     /* 📱 モバイル文字視認性徹底強化 */
@@ -307,19 +325,19 @@ st.markdown(
     }
     
     /* 📱 iPhoneダークモード視認性強化: ボタンの白文字・高コントラスト固定 */
-    div.stButton > button {
+    div.stButton > button, [data-testid="stSidebar"] button, [data-testid="stSidebar"] button:active, [data-testid="stSidebar"] button:focus {
         background-color: #1e293b !important;
         color: #ffffff !important;
-        border: 1px solid #3b82f6 !important;
+        border: 2px solid #3b82f6 !important;
         border-radius: 8px !important;
         transition: all 0.2s ease-in-out !important;
         font-weight: 700 !important;
         font-size: 0.95rem !important;
     }
-    div.stButton > button:hover {
+    div.stButton > button:hover, [data-testid="stSidebar"] button:hover {
         background-color: #3b82f6 !important;
         color: #ffffff !important;
-        box-shadow: 0 0 10px rgba(59, 130, 246, 0.5) !important;
+        box-shadow: 0 0 10px rgba(59, 130, 246, 0.6) !important;
     }
     div.stButton > button:active, div.stButton > button:focus {
         color: #ffffff !important;
@@ -976,10 +994,31 @@ with tab3:
             st.warning("蓄電池とのECHONET Lite通信が遮断されているか、シミュレーションモードのため詳細情報を取得できません。")
 
     if self_suff["daily_data"]:
-        st.markdown("#### 📈 直近30日間の日別エネルギー自給率推移")
-        import pandas as pd
         df_suff = pd.DataFrame(self_suff["daily_data"])
-        st.line_chart(df_suff.set_index("date")["self_sufficiency_percent"])
+        if "self_sufficiency_percent" in df_suff.columns and df_suff["self_sufficiency_percent"].sum() > 0:
+            st.markdown("#### 📈 直近30日間の日別エネルギー自給率推移 (%)")
+            import altair as alt
+            chart_suff = alt.Chart(df_suff).mark_area(
+                color='rgba(52, 211, 153, 0.15)',
+                line={'color': '#34d399', 'strokeWidth': 1.8},
+                interpolate='monotone'
+            ).encode(
+                x=alt.X('date:T', title=None, axis=alt.Axis(format='%m/%d', grid=True, gridColor='rgba(255,255,255,0.06)', labelColor='#cbd5e1')),
+                y=alt.Y('self_sufficiency_percent:Q', title=None, scale=alt.Scale(domain=[0, 100]), axis=alt.Axis(grid=True, gridColor='rgba(255,255,255,0.06)', labelColor='#cbd5e1')),
+                tooltip=[
+                    alt.Tooltip('date:T', title='日付', format='%Y/%m/%d'),
+                    alt.Tooltip('self_sufficiency_percent:Q', title='自給率 (%)')
+                ]
+            ).properties(
+                height=110
+            ).configure_view(
+                strokeOpacity=0
+            ).configure(
+                background='transparent'
+            )
+            st.altair_chart(chart_suff, use_container_width=True)
+        else:
+            st.info("💡 **自給率推移**: 日別履歴ログがまだ十分に取得されていません。サイドバーの「直近14日間の履歴データを同期」を実行すると推移が表示されます。")
 
     
 
