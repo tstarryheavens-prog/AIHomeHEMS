@@ -84,8 +84,20 @@ if st.sidebar.button("⚡ 2016年〜全期間(約10年)一括抽出", use_contai
 # ==========================================
 # 🖥️ メインコンテンツ表示
 # ==========================================
-st.title("⚡ AI SMART ENERGY MONITOR")
-st.subheader("Bルート × ニチコンT5 × HEMS Web × 天気予報AI最適化")
+st.markdown(
+    """
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:-20px; margin-bottom:10px;">
+        <div>
+            <h3 style="margin: 0; padding: 0; font-size: 1.35rem; font-weight:800; color:#f1f5f9;">⚡ AI SMART HEMS</h3>
+            <p style="margin: 0; padding: 0; font-size: 0.75rem; color:#94a3b8;">Bルート × ニチコンT5 × HEMS Web × AI最適化</p>
+        </div>
+        <div style="text-align:right;">
+            <span style="font-size:0.75rem; background:rgba(59, 130, 246, 0.15); border:1px solid rgba(59, 130, 246, 0.3); padding:3px 8px; border-radius:6px; color:#60a5fa; font-weight:700;">v2.2 OS</span>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
 # ガラスモルフィズム ＆ チラつき防止カスタムCSSの挿入
 st.markdown(
@@ -181,6 +193,69 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+# 📡 スマホ用フローティングボタンバーのDOM移動JavaScript（高さ0の非表示iframeで実行）
+components.html(
+    """
+    <script>
+    function initFloatingBar() {
+        const parentDoc = window.parent.document;
+        if (!parentDoc) return;
+        
+        // フローティングバーの作成
+        let bar = parentDoc.getElementById('custom-floating-bar');
+        if (!bar) {
+            bar = parentDoc.createElement('div');
+            bar.id = 'custom-floating-bar';
+            bar.style.position = 'fixed';
+            bar.style.bottom = '0';
+            bar.style.left = '0';
+            bar.style.right = '0';
+            bar.style.background = 'rgba(15, 23, 42, 0.93)';
+            bar.style.backdropFilter = 'blur(12px)';
+            bar.style.webkitBackdropFilter = 'blur(12px)';
+            bar.style.borderTop = '1px solid rgba(255, 255, 255, 0.12)';
+            bar.style.padding = '8px 12px';
+            bar.style.display = 'flex';
+            bar.style.justifyContent = 'space-around';
+            bar.style.gap = '8px';
+            bar.style.zIndex = '999999';
+            parentDoc.body.appendChild(bar);
+            
+            // 下部ボタンと被らないように親コンテナの最下部に余白を追加
+            const viewContainer = parentDoc.querySelector('[data-testid="stAppViewContainer"]');
+            if (viewContainer) {
+                viewContainer.style.paddingBottom = '60px';
+            }
+        }
+        
+        // クイック設定内のStreamlitボタンを探してバーに移動
+        const buttons = parentDoc.querySelectorAll('button');
+        buttons.forEach(btn => {
+            const text = btn.innerText || '';
+            // 移動させるボタン名を選択
+            if (text.includes('📡 サブネット') || text.includes('翌日最適化') || text.includes('直近14日間')) {
+                if (btn.parentElement !== bar) {
+                    bar.appendChild(btn);
+                    btn.style.width = '100%';
+                    btn.style.margin = '0';
+                    btn.style.fontSize = '0.75rem';
+                    btn.style.padding = '8px 2px';
+                    btn.style.height = '38px';
+                    // モバイルでのみ表示
+                    btn.className = btn.className + ' custom-floated-btn';
+                }
+            }
+        });
+    }
+    
+    // 定期監視
+    setInterval(initFloatingBar, 800);
+    </script>
+    """,
+    height=0
+)
+
+
 
 # ⚙️ モバイル用クイック操作パネル (スマホではサイドバーが隠れるためメイン画面にも折りたたみで配置)
 with st.expander("⚙️ モバイル用クイックシステム設定・操作", expanded=False):
@@ -260,13 +335,12 @@ def render_tab1_live():
         alert_names = "・".join([w["name"] for w in warnings_info["warnings"]])
         st.markdown(
             f"""
-            <div class="glass-card" style="border-color: #ef4444; background: rgba(239, 68, 68, 0.12); margin-top: 10px; margin-bottom: 15px;">
-                <h4 style="color: #fca5a5; margin: 0 0 8px 0; display: flex; align-items: center; gap: 8px;">
-                    ⚠️ Storm Watch (気象警報連動 防災動作中)
-                </h4>
-                <p style="color: #fecdd3; margin: 0; font-size: 0.95rem;">
-                    名古屋市熱田区に <strong>{alert_names}</strong> が発令されています。<br>
-                    停電発生に備えて自動最適化スケジュールを一時中断し、<strong>蓄電池を100%満充電に保護維持 (0x42 急速充電)</strong> しています。
+            <div class="glass-card" style="border-color: #ef4444; background: rgba(239, 68, 68, 0.12); margin-top: 5px; margin-bottom: 8px; padding: 8px 12px;">
+                <h6 style="color: #fca5a5; margin: 0 0 4px 0; font-weight:800; font-size:0.85rem; display: flex; align-items: center; gap: 8px;">
+                    ⚠️ Storm Watch (防災警報連動充電中)
+                </h6>
+                <p style="color: #fecdd3; margin: 0; font-size: 0.8rem; line-height: 1.4;">
+                    名古屋市熱田区に <strong>{alert_names}</strong> が発令されています。蓄電池を満充電(0x42)に保護維持しています。
                 </p>
             </div>
             """,
@@ -275,14 +349,9 @@ def render_tab1_live():
     else:
         st.markdown(
             """
-            <div class="glass-card" style="padding: 10px 16px; margin-bottom: 15px; margin-top: 10px; border-color: rgba(16, 185, 129, 0.2);">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div style="color: #cbd5e1; font-size: 0.85rem; font-weight: 700;">🛡️ 防災ステータス (Storm Watch)</div>
-                    <div style="color: #10b981; font-size: 0.85rem; font-weight: 700; display: flex; align-items: center; gap: 6px;">
-                        <span style="display: inline-block; width: 8px; height: 8px; background-color: #10b981; border-radius: 50%; box-shadow: 0 0 8px #10b981;"></span>
-                        熱田区 警報なし (通常AI自動運転)
-                    </div>
-                </div>
+            <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.15); border-radius: 8px; padding: 5px 12px; margin-bottom: 8px; font-size:0.75rem; color:#34d399; font-weight:700; display:flex; justify-content:space-between; align-items:center;">
+                <span>🛡️ Storm Watch: 気象警報なし (通常AI自動運転)</span>
+                <span style="display:inline-block; width:6px; height:6px; background-color:#10b981; border-radius:50%; box-shadow:0 0 6px #10b981;"></span>
             </div>
             """,
             unsafe_allow_html=True
@@ -290,26 +359,20 @@ def render_tab1_live():
 
     latest_log = poll_and_log_all_data()
 
-
     pv_w_int = int(round(latest_log.get('pv_w', 0)))
     grid_w_int = int(round(latest_log.get('grid_w', 0)))
     battery_w_int = int(round(latest_log.get('battery_w', 0)))
-    soc_int = int(round(latest_log.get('soc', 0)))
+    soc_int = int(round(latest_log.get('battery_soc', 50)))
     cum_pv_int = int(round(latest_log.get('cum_pv_kwh', 0)))
-    battery_wh_int = int(round(latest_log.get('battery_wh', 0)))
 
-    # 物理エネルギー保存則に基づく「家庭全体負荷(純家電消費電力)」の算定:
-    # 供給(PV + 買電 + 放電) = 消費(純家電消費 + 充電 + 売電)
-    # ➔ 純家電消費 = PV + 買電(+) / 売電(-) - 充電(+) / 放電(-)
-    house_w_int = max(0, pv_w_int + grid_w_int - battery_w_int)
-
+    # 小数表現の作成
     pv_kw = round(pv_w_int / 1000.0, 2)
-    grid_kw = round(abs(grid_w_int) / 1000.0, 2)
-    battery_kw = round(abs(battery_w_int) / 1000.0, 2)
-    house_kw = round(house_w_int / 1000.0, 2)
+    grid_kw = round(grid_w_int / 1000.0, 2)
+    battery_kw = round(battery_w_int / 1000.0, 2)
 
-    # 1. 3DスマートHEMS画面
-    st.markdown("### 🎛️ リアルタイム・エネルギーフロー (3DスマートHEMS画面)")
+    # 家庭内負荷計算 (W) ➔ PV発電 - 系統電力(売電は負) - 蓄電池電力(充電は正)
+    house_w_int = max(0, pv_w_int - grid_w_int - battery_w_int)
+    house_kw = round(house_w_int / 1000.0, 2)
 
     html_hems_flow = f"""
     <!DOCTYPE html>
@@ -324,33 +387,34 @@ def render_tab1_live():
         color: #ffffff;
     }}
     .hems-container {{
-        background: radial-gradient(circle at 50% 30%, #1e293b 0%, #0f172a 100%);
-        border: 2px solid #334155;
-        border-radius: 16px;
-        padding: 12px 16px;
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+        background: rgba(15, 23, 42, 0.7);
+        border: 1px solid #1e293b;
+        border-radius: 12px;
+        padding: 8px 12px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+        max-height: 240px;
+        overflow: hidden;
     }}
     .hems-header {{
         display: flex;
         justify-content: space-between;
-        align-items: center;
+        font-size: 0.75rem;
         color: #94a3b8;
-        font-size: 0.85rem;
-        margin-bottom: 10px;
-        border-bottom: 1px solid #334155;
-        padding-bottom: 6px;
+        border-bottom: 1px solid #1e293b;
+        padding-bottom: 4px;
+        margin-bottom: 8px;
+        font-weight: 600;
     }}
     .flow-grid {{
         display: grid;
-        grid-template-columns: 1fr 1.2fr 1fr;
-        gap: 10px;
-        align-items: center;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
     }}
     .flow-card {{
         background: rgba(30, 41, 59, 0.85);
         border: 1px solid #475569;
-        border-radius: 12px;
-        padding: 10px;
+        border-radius: 10px;
+        padding: 6px 10px;
         text-align: center;
         box-shadow: 0 4px 10px rgba(0,0,0,0.3);
     }}
@@ -359,22 +423,22 @@ def render_tab1_live():
     .house-card {{ border-color: #60a5fa; background: rgba(30, 58, 138, 0.4); box-shadow: 0 0 15px rgba(96, 165, 250, 0.3); grid-column: 2; grid-row: 2; }}
     .bat-card {{ border-color: #38bdf8; box-shadow: 0 0 10px rgba(56, 189, 248, 0.2); grid-column: 3; grid-row: 2; }}
 
-    .card-title {{ font-size: 0.8rem; font-weight: 700; color: #cbd5e1; margin-bottom: 4px; }}
-    .card-val {{ font-size: 1.4rem; font-weight: 900; margin: 2px 0; }}
-    .card-sub {{ font-size: 0.75rem; font-weight: 600; color: #94a3b8; }}
+    .card-title {{ font-size: 0.72rem; font-weight: 700; color: #cbd5e1; margin-bottom: 2px; }}
+    .card-val {{ font-size: 1.15rem; font-weight: 900; margin: 1px 0; }}
+    .card-sub {{ font-size: 0.68rem; font-weight: 600; color: #94a3b8; }}
 
     @media (max-width: 600px) {{
-        .hems-container {{ padding: 8px; border-radius: 12px; border-width: 1px; }}
-        .hems-header {{ flex-direction: column; align-items: flex-start; font-size: 0.75rem; gap: 4px; margin-bottom: 8px; }}
+        .hems-container {{ padding: 6px 8px; border-radius: 10px; max-height: 220px; }}
+        .hems-header {{ font-size: 0.7rem; margin-bottom: 6px; }}
         .flow-grid {{ grid-template-columns: 1fr 1fr; gap: 6px; }}
         .pv-card {{ grid-column: 1; grid-row: 1; }}
         .house-card {{ grid-column: 2; grid-row: 1; }}
         .bat-card {{ grid-column: 1; grid-row: 2; }}
         .grid-card {{ grid-column: 2; grid-row: 2; }}
-        .flow-card {{ padding: 6px; border-radius: 8px; }}
-        .card-title {{ font-size: 0.7rem; margin-bottom: 2px; }}
-        .card-val {{ font-size: 1.15rem; }}
-        .card-sub {{ font-size: 0.65rem; }}
+        .flow-card {{ padding: 4px 6px; border-radius: 8px; }}
+        .card-title {{ font-size: 0.65rem; }}
+        .card-val {{ font-size: 1.05rem; }}
+        .card-sub {{ font-size: 0.62rem; }}
     }}
     </style>
     </head>
@@ -382,33 +446,33 @@ def render_tab1_live():
 
     <div class="hems-container">
         <div class="hems-header">
-            <div>🏠 <strong>スマートホーム HEMS コントローラ</strong> | 卒FIT最適化モード (5秒自動更新)</div>
-            <div>⏱️ {latest_log.get('timestamp', '')} JST</div>
+            <div>🏠 <strong>スマートホーム HEMS コントローラ</strong></div>
+            <div>⏱️ {latest_log.get('timestamp', '')}</div>
         </div>
         
         <div class="flow-grid">
             <div class="flow-card pv-card">
                 <div class="card-title">☀️ 太陽光発電システム</div>
-                <div class="card-val" style="color: #fbbf24;">{pv_kw} <span style="font-size:0.9rem;">kW</span></div>
+                <div class="card-val" style="color: #fbbf24;">{pv_kw} <span style="font-size:0.8rem;">kW</span></div>
                 <div class="card-sub">({pv_w_int:,} W) | 累積: {cum_pv_int:,} kWh</div>
             </div>
 
             <div class="flow-card grid-card">
                 <div class="card-title">⚡ 電力会社 (送電線)</div>
-                <div class="card-val" style="color: {'#ef4444' if grid_w_int > 0 else '#10b981'};">{grid_kw} <span style="font-size:0.9rem;">kW</span></div>
+                <div class="card-val" style="color: {'#ef4444' if grid_w_int > 0 else '#10b981'};">{grid_kw} <span style="font-size:0.8rem;">kW</span></div>
                 <div class="card-sub">{'🔴 買電中' if grid_w_int > 0 else ('🟢 売電中' if grid_w_int < 0 else '⚡ 系統平衡')} ({grid_w_int:,} W)</div>
             </div>
 
             <div class="flow-card house-card">
-                <div style="font-size:1.5rem; margin-bottom: 2px;">🏡</div>
-                <div class="card-title" style="color:#93c5fd;">消費 (家庭全体負荷)</div>
-                <div class="card-val" style="color: #60a5fa;">{house_kw} <span style="font-size:0.9rem;">kW</span></div>
+                <div style="font-size:1.1rem; margin-bottom: 1px;">🏡</div>
+                <div class="card-title" style="color:#93c5fd;">消費 (家庭負荷)</div>
+                <div class="card-val" style="color: #60a5fa;">{house_kw} <span style="font-size:0.8rem;">kW</span></div>
                 <div class="card-sub">({house_w_int:,} W)</div>
             </div>
 
             <div class="flow-card bat-card">
                 <div class="card-title">🔋 蓄電池 (ニチコンT5)</div>
-                <div class="card-val" style="color: #38bdf8;">{soc_int} <span style="font-size:0.9rem;">%</span> ({battery_kw} kW)</div>
+                <div class="card-val" style="color: #38bdf8;">{soc_int} <span style="font-size:0.8rem;">%</span> ({battery_kw} kW)</div>
                 <div class="card-sub">{'⚡ 充電中' if battery_w_int > 50 else ('🔋 放電中' if battery_w_int < -50 else '⏸️ 待機中')} ({battery_w_int:,} W)</div>
             </div>
         </div>
@@ -418,9 +482,110 @@ def render_tab1_live():
     </html>
     """
 
-    components.html(html_hems_flow, height=320)
+    components.html(html_hems_flow, height=230)
 
-    st.info("🌐 **HEMS Web Controller (192.168.2.23)**: [http://192.168.2.23/](http://192.168.2.23/) （WEB CONTROLLER ログイン画面）")
+    # ==========================================
+    # 📈 全電力トレンド推移 (スマホバグ出し用に上部配置)
+    # ==========================================
+    st.markdown("##### 📈 全電力トレンド推移 (過去48時間等)")
+    
+    limit_map = {
+        "📅 全期間 過去全ログ (約35,000件)": 100000,
+        "📅 直近 48時間 (約34,560件)": 34560,
+        "📅 直近 24時間 (約17,280件)": 17280,
+        "🕕 直近 6時間 (約4,320件)": 4320,
+        "🕐 直近 1時間 (約720件)": 720
+    }
+    
+    tr_col1, tr_col2 = st.columns([1.5, 1])
+    with tr_col1:
+        chart_option = st.radio(
+            "グラフ指標:",
+            ["☀️ 太陽光発電 (W)", "⚡ 買電電力 (W)", "🔋 蓄電池 SOC (%) ＆ 充放電 (W)", "📊 全項目重ね合わせ比較"],
+            horizontal=True,
+            key="live_chart_option",
+            label_visibility="collapsed"
+        )
+    with tr_col2:
+        range_option = st.selectbox(
+            "期間:",
+            [
+                "📅 全期間 過去全ログ (約35,000件)",
+                "📅 直近 48時間 (約34,560件)",
+                "📅 直近 24時間 (約17,280件)",
+                "🕕 直近 6時間 (約4,320件)",
+                "🕐 直近 1時間 (約720件)"
+            ],
+            index=1, # 初期表示を直近48時間に設定！
+            key="live_range_option",
+            label_visibility="collapsed"
+        )
+        
+    fetch_limit = limit_map.get(range_option, 34560)
+    telemetry_hist = get_recent_telemetry(limit=fetch_limit)
+    
+    if telemetry_hist:
+        df_th = pd.DataFrame(telemetry_hist)
+        df_th["timestamp"] = pd.to_datetime(df_th["timestamp"])
+        df_th = df_th.sort_values("timestamp")
+        num_cols = [c for c in ["pv_w", "grid_w", "battery_w", "battery_soc"] if c in df_th.columns]
+        
+        df_th_index = df_th.set_index("timestamp")
+        if len(df_th) > 10000:
+            df_th_plot = df_th_index[num_cols].resample('10min').mean().dropna()
+        elif len(df_th) > 2000:
+            df_th_plot = df_th_index[num_cols].resample('2min').mean().dropna()
+        else:
+            df_th_plot = df_th_index[num_cols]
+            
+        import altair as alt
+        
+        def draw_altair_chart_compact(df, y_cols, y_label):
+            df_reset = df.reset_index()
+            rename_dict = {
+                "pv_w": "太陽光発電 (W)",
+                "grid_w": "買電/売電 (W)",
+                "battery_w": "蓄電池充放電 (W)",
+                "battery_soc": "蓄電池 SOC (%)"
+            }
+            df_plot_renamed = df_reset.rename(columns=rename_dict)
+            plot_cols = [rename_dict[c] for c in y_cols if c in rename_dict]
+            df_melt = df_plot_renamed.melt("timestamp", value_vars=plot_cols, var_name="指標", value_name="値")
+            
+            color_scale = alt.Scale(
+                domain=["太陽光発電 (W)", "買電/売/売電 (W)", "蓄電池充放電 (W)", "蓄電池 SOC (%)"],
+                range=["#fbbf24", "#f87171", "#38bdf8", "#34d399"]
+            )
+            
+            chart = alt.Chart(df_melt).mark_line(interpolate='monotone', strokeWidth=1.5).encode(
+                x=alt.X('timestamp:T', title=None, axis=alt.Axis(format='%m/%d %H:%M', grid=True, gridColor='rgba(255,255,255,0.06)', labelColor='#94a3b8')),
+                y=alt.Y('値:Q', title=None, axis=alt.Axis(grid=True, gridColor='rgba(255,255,255,0.06)', labelColor='#94a3b8')),
+                color=alt.Color('指標:N', scale=color_scale, legend=alt.Legend(title=None, labelColor='#f1f5f9', direction='horizontal', orient='bottom')),
+                tooltip=[
+                    alt.Tooltip('timestamp:T', title='時刻', format='%m/%d %H:%M'),
+                    alt.Tooltip('指標:N', title='項目'),
+                    alt.Tooltip('値:Q', title='値')
+                ]
+            ).properties(
+                height=180 # 高さを180pxに抑え、スマホ画面にコンパクトに配置
+            ).configure_view(
+                strokeOpacity=0
+            ).configure(
+                background='transparent'
+            )
+            st.altair_chart(chart, use_container_width=True)
+
+        if chart_option == "☀️ 太陽光発電 (W)":
+            draw_altair_chart_compact(df_th_plot, ["pv_w"], "W")
+        elif chart_option == "⚡ 買電電力 (W)":
+            draw_altair_chart_compact(df_th_plot, ["grid_w"], "W")
+        elif chart_option == "🔋 蓄電池 SOC (%) ＆ 充放電 (W)":
+            draw_altair_chart_compact(df_th_plot, ["battery_soc"], "%")
+            draw_altair_chart_compact(df_th_plot, ["battery_w"], "W")
+        else:
+            draw_altair_chart_compact(df_th_plot, ["pv_w", "grid_w", "battery_w"], "W")
+            draw_altair_chart_compact(df_th_plot, ["battery_soc"], "%")
+
     st.divider()
 
     # 2. 各部屋・分電盤回路の消費電力モニタリング（横棒グラフ ＋ 右側数値）
@@ -695,124 +860,7 @@ with tab3:
         st.line_chart(df_suff.set_index("date")["self_sufficiency_percent"])
 
     
-    st.divider()
 
-    st.markdown("### 📈 全体電力トレンド推移")
-    
-    limit_map = {
-        "📅 全期間 過去全ログ (約35,000件 / 過去全データ)": 100000,
-        "📅 直近 48時間 (約34,560件)": 34560,
-        "📅 直近 24時間 (約17,280件)": 17280,
-        "🕕 直近 6時間 (約4,320件)": 4320,
-        "🕐 直近 1時間 (約720件)": 720,
-        "⏱️ 直近 10分 (120件)": 120
-    }
-    
-    c_radio, c_range = st.columns([1.8, 1])
-    with c_radio:
-        st.markdown("**表示指標選択**:")
-        chart_option = st.radio(
-            "グラフ項目の選択:",
-            ["☀️ 太陽光発電 (W)", "⚡ 買電電力 (W)", "🔋 蓄電池 SOC (%) ＆ 充放電 (W)", "📊 全項目重ね合わせ比較"],
-            horizontal=True,
-            key="trend_chart_option_main"
-        )
-    with c_range:
-        st.markdown("**時間軸・過去ログ表示範囲**:")
-        range_option = st.selectbox(
-            "表示対象の期間選択:",
-            [
-                "📅 全期間 過去全ログ (約35,000件 / 過去全データ)",
-                "📅 直近 48時間 (約34,560件)",
-                "📅 直近 24時間 (約17,280件)",
-                "🕕 直近 6時間 (約4,320件)",
-                "🕐 直近 1時間 (約720件)",
-                "⏱️ 直近 10分 (120件)"
-            ],
-            index=2, # デフォルトは直近24時間
-            key="trend_range_option_main"
-        )
-        
-    fetch_limit = limit_map.get(range_option, 17280)
-    
-    telemetry_hist = get_recent_telemetry(limit=fetch_limit)
-    if telemetry_hist:
-        df_th = pd.DataFrame(telemetry_hist)
-        df_th["timestamp"] = pd.to_datetime(df_th["timestamp"])
-        df_th = df_th.sort_values("timestamp")
-        
-        num_cols = [c for c in ["pv_w", "grid_w", "battery_w", "battery_soc"] if c in df_th.columns]
-        
-        # スマホ表示速度向上のためのデータリサンプリング (間引き・平均化)
-        df_th_index = df_th.set_index("timestamp")
-        if len(df_th) > 10000:
-            df_th_plot = df_th_index[num_cols].resample('10min').mean().dropna()
-        elif len(df_th) > 2000:
-            df_th_plot = df_th_index[num_cols].resample('2min').mean().dropna()
-        else:
-            df_th_plot = df_th_index[num_cols]
-            
-        st.caption(f"📊 表示中データ: {len(df_th_plot):,} 件 (元データ: {len(df_th):,} 件) | 期間: `{df_th_index.index.min().strftime('%Y-%m-%d %H:%M')}` 〜 `{df_th_index.index.max().strftime('%Y-%m-%d %H:%M')}`")
-        
-        import altair as alt
-        
-        # 高コントラスト＆ユニバーサルデザインのAltair描画用関数
-        def draw_altair_chart(df, y_cols, y_label):
-            df_reset = df.reset_index()
-            # 凡例名をわかりやすく変換
-            rename_dict = {
-                "pv_w": "太陽光発電 (W)",
-                "grid_w": "買電/売電電力 (W)",
-                "battery_w": "蓄電池充放電 (W)",
-                "battery_soc": "蓄電池 SOC (%)"
-            }
-            df_plot_renamed = df_reset.rename(columns=rename_dict)
-            plot_cols = [rename_dict[c] for c in y_cols if c in rename_dict]
-            
-            df_melt = df_plot_renamed.melt("timestamp", value_vars=plot_cols, var_name="指標", value_name="値")
-            
-            # カラーパレットの設定 (ユニバーサルデザイン)
-            color_scale = alt.Scale(
-                domain=["太陽光発電 (W)", "買電/売電電力 (W)", "蓄電池充放電 (W)", "蓄電池 SOC (%)"],
-                range=["#fbbf24", "#f87171", "#38bdf8", "#34d399"] # 黄、赤、青、緑
-            )
-            
-            chart = alt.Chart(df_melt).mark_line(interpolate='monotone', strokeWidth=2).encode(
-                x=alt.X('timestamp:T', title='時間 (JST)', axis=alt.Axis(format='%m/%d %H:%M', grid=True, gridColor='rgba(255,255,255,0.07)', labelColor='#94a3b8', titleColor='#94a3b8')),
-                y=alt.Y('値:Q', title=y_label, axis=alt.Axis(grid=True, gridColor='rgba(255,255,255,0.07)', labelColor='#94a3b8', titleColor='#94a3b8')),
-                color=alt.Color('指標:N', scale=color_scale, legend=alt.Legend(title="指標一覧", labelColor='#f1f5f9', titleColor='#f1f5f9')),
-                tooltip=[
-                    alt.Tooltip('timestamp:T', title='時刻', format='%Y-%m-%d %H:%M'),
-                    alt.Tooltip('指標:N', title='項目'),
-                    alt.Tooltip('値:Q', title='電力値/残量')
-                ]
-            ).properties(
-                height=320
-            ).configure_view(
-                strokeOpacity=0
-            ).configure(
-                background='transparent'
-            )
-            st.altair_chart(chart, use_container_width=True)
-
-        if chart_option == "☀️ 太陽光発電 (W)":
-            st.markdown("##### ☀️ 太陽光発電電力 (PV W) の過去推移")
-            draw_altair_chart(df_th_plot, ["pv_w"], "電力 (W)")
-        elif chart_option == "⚡ 買電電力 (W)":
-            st.markdown("##### ⚡ 買電/売電電力 (Grid W) の過去推移 (+:買電, -:売電)")
-            draw_altair_chart(df_th_plot, ["grid_w"], "電力 (W)")
-        elif chart_option == "🔋 蓄電池 SOC (%) ＆ 充放電 (W)":
-            st.markdown("##### 🔋 蓄電池 SOC (%) の過去推移")
-            draw_altair_chart(df_th_plot, ["battery_soc"], "蓄電池残量 (%)")
-            st.markdown("##### 🔋 蓄電池 充放電電力 (W) の過去推移 (+:充電, -:放電)")
-            draw_altair_chart(df_th_plot, ["battery_w"], "充放電電力 (W)")
-        else:
-            st.markdown("##### 📊 全電力指標（重ね合わせ比較）")
-            draw_altair_chart(df_th_plot, ["pv_w", "grid_w", "battery_w"], "電力 (W)")
-            st.markdown("##### 🔋 蓄電池 SOC (%) の過去推移")
-            draw_altair_chart(df_th_plot, ["battery_soc"], "蓄電池残量 (%)")
-            
-    st.divider()
 
     
     # ==========================================
