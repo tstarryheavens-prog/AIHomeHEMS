@@ -481,8 +481,18 @@ def render_tab1_live():
     grid_kw = round(grid_w_int / 1000.0, 2)
     battery_kw = round(battery_w_int / 1000.0, 2)
 
-    # 家庭内負荷計算 (W) ➔ PV発電 - 系統電力(売電は負) - 蓄電池電力(充電は正)
-    house_w_int = max(0, pv_w_int - grid_w_int - battery_w_int)
+    # 宅内総消費電力 (W) の正確な算定
+    # 各部屋分岐回路の合計値、または (PV発電 + 系統買電 - 蓄電池充電)
+    rooms_data = latest_log.get("rooms", {})
+    sum_room_w = sum(rooms_data.values()) if rooms_data else 0
+    
+    if sum_room_w > 0:
+        house_w_int = int(round(sum_room_w))
+    else:
+        # 電力量保存則: 宅内負荷 = PV + 買電(売電は負) - 蓄電池電力(充電は+, 放電は-)
+        calc_house = pv_w_int + grid_w_int - battery_w_int
+        house_w_int = max(250, int(round(calc_house)))
+        
     house_kw = round(house_w_int / 1000.0, 2)
 
     html_hems_flow = f"""
