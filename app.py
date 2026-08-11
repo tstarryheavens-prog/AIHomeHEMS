@@ -760,19 +760,19 @@ def render_tab1_live():
         overflow: hidden;
         margin: 0 14px;
     }}
-    .bar-fill {{
+    .bar-fill {
         height: 100%;
         background: linear-gradient(90deg, #3b82f6 0%, #60a5fa 100%);
         border-radius: 6px;
         transition: width 0.4s ease-in-out;
-    }}
-    .room-val {{
+    }
+    .room-val {
         width: 80px;
         text-align: right;
         font-weight: 800;
         font-size: 1.15rem;
         color: #38bdf8;
-    }}
+    }
     </style>
     </head>
     <body>
@@ -862,7 +862,7 @@ with tab2:
 
 
 with tab3:
-    st.markdown("### 🛡️ バッテリー寿命診断 ＆ エネルギー自給自足分析")
+    st.markdown("#### 🛡️ 蓄電池寿命診断 ＆ 自給率分析")
     
     from database import get_battery_health_metrics, get_self_sufficiency_data
     health = get_battery_health_metrics()
@@ -875,30 +875,25 @@ with tab3:
     if cum_charge_kwh > 0:
         total_cycles = (cum_charge_kwh + cum_discharge_kwh) / 2.0 / 11.1
     else:
-        # 実機から取得できなかった場合の稼働日数ベース推定（1日約0.75サイクル）
         total_cycles = health['total_telemetry_days'] * 0.75
         
     total_cycles = max(1.0, total_cycles)
     
-    # 推定SOH (State of Health) 劣化計算モデル (ニチコンT5サイクル特性に基づく概算)
-    # ニチコンの仕様上、6000サイクル以上で容量60%以上維持。
-    # 1サイクルあたり 0.005%〜0.007% の容量劣化と、経年劣化を加算
-    calendar_loss = health['total_telemetry_days'] * (3.0 / 365.0) # 年間約3.0%の経年劣化
+    calendar_loss = health['total_telemetry_days'] * (3.0 / 365.0)
     cycle_loss = total_cycles * 0.005
     est_soh = max(70.0, min(100.0, 100.0 - calendar_loss - cycle_loss))
     
     h_col1, h_col2, h_col3 = st.columns(3)
     with h_col1:
-        st.metric("🩺 バッテリー健康度 (SOH)", f"{est_soh:.2f} %", help="出荷時を100%とした時の現在の容量維持率の推定値")
+        st.metric("🩺 SOH (健康度)", f"{est_soh:.1f} %", help="出荷時を100%とした時の現在の容量維持率の推定値")
     with h_col2:
-        st.metric("🔄 生涯総サイクル数", f"{int(round(total_cycles)):,} 回", help="定格容量分の充放電を1サイクルとした総カウント数")
+        st.metric("🔄 総サイクル数", f"{int(round(total_cycles)):,} 回", help="定格容量分の充放電を1サイクルとした総カウント数")
     with h_col3:
-        st.metric("🛡️ 寿命保護スコア (JIT)", f"{health['life_protection_score']} / 100", help="AI満充電放置時間の削減実績に基づく保護スコア")
+        st.metric("🛡️ JIT保護スコア", f"{health['life_protection_score']} 点", help="AI満充電放置時間の削減実績に基づく保護スコア")
 
     # ==========================================
     # 🌲 経済効果 ＆ エコ貢献度統計 (直近30日の実績)
     # ==========================================
-    st.markdown("#### 🌲 直近30日間のエネマネ経済効果 ＆ エコ削減貢献度")
     h_history_30 = get_hems_daily_history(limit=30, filter_zero=True)
     self_kwh_sum = 0
     buy_kwh_sum = 0
@@ -911,7 +906,6 @@ with tab3:
     co2_kg = self_kwh_sum * 0.435
     sugi_trees = co2_kg / 14.0
     
-    # 2026-11-27までのFIT判定
     from datetime import datetime, timezone, timedelta
     JST = timezone(timedelta(hours=9))
     now_dt_check = datetime.now(JST)
@@ -923,63 +917,52 @@ with tab3:
     fit_end_check = datetime(fit_end_date_check.year, fit_end_date_check.month, fit_end_date_check.day, 23, 59, 59, tzinfo=JST)
     is_fit_active_check = (now_dt_check <= fit_end_check)
 
-    # 経済削減効果：太陽光の自家消費節約(36円単価) ＋ 深夜充電した電力の昼間放電による利益(利ざや14.7円)
     solar_savings = self_kwh_sum * 36.0
     arbitrage_savings = (buy_kwh_sum * 0.8) * (31.0 - 16.30) if is_fit_active_check else 0
     total_savings = solar_savings + arbitrage_savings
 
+    st.markdown("##### 🌲 直近30日間のエネマネ削減実績")
     eco_col1, eco_col2, eco_col3 = st.columns(3)
     with eco_col1:
-        st.metric("💰 今月の削減経済効果 (概算)", f"¥{int(round(total_savings)):,}", help="太陽光自家消費分(買電削減) ＋ 夜間充電利ざやによる節約の合計額")
+        st.metric("💰 削減金額", f"¥{int(round(total_savings)):,}")
     with eco_col2:
-        st.metric("📉 CO2排出削減量", f"{co2_kg:.1f} kg-CO2", help="太陽光自家消費により削減された二酸化炭素排出量")
+        st.metric("📉 CO2削減", f"{co2_kg:.0f} kg")
     with eco_col3:
-        st.metric("🌲 杉の木換算本数", f"{sugi_trees:.1f} 本", help="削減したCO2を杉の木(1本年14kg吸収)に換算した際の本数")
+        st.metric("🌲 杉の木換算", f"{sugi_trees:.1f} 本")
 
     st.markdown(
         f"""
-        <div class="glass-card" style="margin-top: 10px; margin-bottom: 20px;">
-            <h5 style="color: #60a5fa; margin: 0 0 10px 0;">📊 蓄電池延命・保護レポート</h5>
-            <p style="margin: 0; font-size: 0.95rem; line-height: 1.6;">
-                朝の利用直前にピンポイント満充電を行う「JIT(Just In Time)急速充電窓」制御により、<br>
-                1日あたり平均 <strong>{health['saved_hours_per_day']} 時間</strong> の満充電放置時間を削減できています。<br>
-                これにより、高電圧放置によるバッテリー内部の劣化を抑制し、長期間 of 寿命維持を強力にサポートしています。<br>
-                <small style="color: #94a3b8;">※ 集計対象ログ日数: {health['total_telemetry_days']} 日</small>
-            </p>
+        <div class="glass-card" style="padding: 10px 14px; margin-top: 8px; margin-bottom: 12px;">
+            <div style="font-size:0.8rem; font-weight:800; color:#60a5fa; margin-bottom:4px;">📊 蓄電池JIT延命・保護レポート</div>
+            <div style="font-size:0.75rem; color:#f8fafc; line-height:1.4;">
+                朝の利用直前急速充電により1日平均 <strong>{health['saved_hours_per_day']} 時間</strong> の満充電放置時間を削減。<br>
+                <span style="color: #94a3b8; font-size:0.7rem;">※ 集計対象: {health['total_telemetry_days']} 日分データ</span>
+            </div>
         </div>
         """,
         unsafe_allow_html=True
     )
     
-    # ==========================================
-    # 🩺 ニチコン詳細診断 (マニア向けECHONET Lite詳細情報)
-    # ==========================================
-    st.markdown("#### 🔌 ニチコンT5 蓄電池システム・詳細診断 (マニア向け)")
-    with st.expander("🩺 ECHONET Lite デバイス生データ ＆ システム内部状態", expanded=False):
+    # 🩺 ニチコン詳細診断
+    with st.expander("🩺 ニチコンT5 ECHONET Liteデバイス詳細", expanded=False):
         if batt_sys_info:
             d_col1, d_col2 = st.columns(2)
             with d_col1:
-                st.markdown("**🔋 蓄電デバイス状態 (Class 0x027D)**")
-                st.write(f"・**接続IP / Port**: `{config.get('nichicon', {}).get('ip_address', '192.168.2.12')}:{config.get('nichicon', {}).get('port', 3610)}`")
-                st.write(f"・**動作モード (EPC 0xDA)**: `{batt_sys_info.get('mode', 'UNKNOWN')}`")
-                st.write(f"・**現在の蓄電SOC (EPC 0xE7)**: `{batt_sys_info.get('soc', 0)} %`")
-                st.write(f"・**現在の残容量Wh (EPC 0xE2)**: `{batt_sys_info.get('battery_wh', 0):,} Wh`")
-                st.write(f"・**定格充電能力 (EPC 0xD0)**: `5,900 W` (実機設定値)")
-                st.write(f"・**定格放電能力 (EPC 0xD1)**: `5,900 W` (実機設定値)")
+                st.markdown("**🔋 デバイス状態 (Class 0x027D)**")
+                st.write(f"・**IP/Port**: `{config.get('nichicon', {}).get('ip_address', '192.168.2.12')}:3610`")
+                st.write(f"・**動作モード**: `{batt_sys_info.get('mode', 'UNKNOWN')}`")
+                st.write(f"・**SOC**: `{batt_sys_info.get('soc', 0)} %` | **残容量**: `{batt_sys_info.get('battery_wh', 0):,} Wh`")
             with d_col2:
-                st.markdown("**📊 累積充放電電力 / 太陽光統計**")
-                st.write(f"・**瞬時充放電電力 (EPC 0xD3)**: `{batt_sys_info.get('power_w', 0):,} W` (+:充電, -:放電)")
-                st.write(f"・**累積充電電力量 (EPC 0xE5)**: `{batt_sys_info.get('cum_charge_kwh', 0):,} kWh` (寿命累計)")
-                st.write(f"・**累積放電電力量 (EPC 0xE4)**: `{batt_sys_info.get('cum_discharge_kwh', 0):,} kWh` (寿命累計)")
-                st.write(f"・**太陽光瞬時発電 (EPC 0xE0)**: `{batt_sys_info.get('pv_w', 0):,} W`")
-                st.write(f"・**太陽光累積発電 (EPC 0xE1)**: `{batt_sys_info.get('cum_pv_kwh', 0):,} kWh` (累計)")
+                st.markdown("**📊 充放電 / 太陽光累計**")
+                st.write(f"・**充放電**: `{batt_sys_info.get('power_w', 0):,} W` (+充電 / -放電)")
+                st.write(f"・**累計充電**: `{batt_sys_info.get('cum_charge_kwh', 0):,} kWh` | **放電**: `{batt_sys_info.get('cum_discharge_kwh', 0):,} kWh`")
         else:
-            st.warning("蓄電池とのECHONET Lite通信が遮断されているか、シミュレーションモードのため詳細情報を取得できません。")
+            st.warning("蓄電池通信オフまたはシミュレーションモードです。")
 
     if self_suff["daily_data"]:
         df_suff = pd.DataFrame(self_suff["daily_data"])
         if "self_sufficiency_percent" in df_suff.columns and df_suff["self_sufficiency_percent"].sum() > 0:
-            st.markdown("#### 📈 直近30日間の日別エネルギー自給率推移 (%)")
+            st.markdown("##### 📈 日別エネルギー自給率推移 (%)")
             import altair as alt
             chart_suff = alt.Chart(df_suff).mark_area(
                 color='rgba(52, 211, 153, 0.15)',
@@ -993,37 +976,24 @@ with tab3:
                     alt.Tooltip('self_sufficiency_percent:Q', title='自給率 (%)')
                 ]
             ).properties(
-                height=110
+                height=95
             ).configure_view(
                 strokeOpacity=0
             ).configure(
                 background='transparent'
             )
             st.altair_chart(chart_suff, use_container_width=True)
-        else:
-            st.info("💡 **自給率推移**: 日別履歴ログがまだ十分に取得されていません。サイドバーの「直近14日間の履歴データを同期」を実行すると推移が表示されます。")
 
-    
-
-
-    
-    # ==========================================
-    # 📊 5. HEMS 実機 ＆ CSV過去ログ実績（電力量kWh ＆ 電気代円）
-    # ==========================================
-    st.markdown("### 📊 HEMS 実機 ＆ CSV過去ログ実績（電力量kWh ＆ 電気代円）")
-    
-    st.info(
-        "💡 **HEMS実機データ ＆ 過去CSVログの自動可視化**:\n"
-        "HEMSコントローラ（192.168.2.23）から同期した直近実績、およびアップロードしたCSV過去ログの「電力量 (kWh)」と「電気代 (円)」を時系列グラフで確認できます。"
-    )
+    # HEMS 実機 ＆ CSV過去ログ実績
+    st.markdown("##### 📊 HEMS 実機 ＆ CSV過去ログ実績 (kWh / 円)")
     
     from hems_monthly_importer import get_hems_monthly_history
     from katene_importer import import_katene_csv, get_historical_load_summary
     
     hist_sub_tab1, hist_sub_tab2, hist_sub_tab3 = st.tabs([
-        "⚡ 日別電力量(kWh) ＆ 電気代(円) トレンド", 
-        "📅 月別電力量(kWh) ＆ 電気代(円) トレンド (2016年〜全期間)",
-        "📁 2016年〜過去CSVログのインポート (カテエネ・HEMS書き出し)"
+        "⚡ 日別推移", 
+        "📅 月別推移 (2016〜)",
+        "📁 CSVインポート"
     ])
     
     with hist_sub_tab1:
@@ -1033,21 +1003,21 @@ with tab3:
             df_hh["date_str"] = pd.to_datetime(df_hh["date_str"])
             df_hh = df_hh.sort_values("date_str").set_index("date_str")
             
-            st.markdown(f"**⚡ 日別 4大電力量推移 (買電 / 売電 / 発電 / 自家消費 kWh) (全 {len(df_hh)} 日分)**")
+            st.markdown(f"**⚡ 日別 4大電力量推移 (kWh)**")
             kwh_cols = [c for c in ["buy_kwh", "sale_kwh", "pv_kwh", "self_kwh"] if c in df_hh.columns]
             if kwh_cols:
                 df_kwh_show = df_hh[kwh_cols].rename(columns={
-                    "buy_kwh": "買電量 (kWh)",
-                    "sale_kwh": "売電量 (kWh)",
-                    "pv_kwh": "発電量 (kWh)",
-                    "self_kwh": "自家消費 (kWh)"
+                    "buy_kwh": "買電",
+                    "sale_kwh": "売電",
+                    "pv_kwh": "発電",
+                    "self_kwh": "自家消費"
                 })
-                st.line_chart(df_kwh_show)
+                st.line_chart(df_kwh_show, height=130)
     
-            st.markdown(f"**💴 日別電気代 (円/日) 推移**")
-            st.bar_chart(df_hh[["cost_yen"]], y_label="電気代 (円)")
+            st.markdown(f"**💴 日別電気代 (円) 推移**")
+            st.bar_chart(df_hh[["cost_yen"]], y_label="電気代", height=120)
         else:
-            st.info("※ 有効な日別データが見つかりません。左側サイドバーの「直近14日間の履歴データを同期」ボタンを押すか、過去CSVを取り込んでください。")
+            st.info("※ 有効な日別データがありません。サイドバーから同期してください。")
             
     with hist_sub_tab2:
         m_history = get_hems_monthly_history()
@@ -1056,30 +1026,30 @@ with tab3:
             df_mh["year_month"] = pd.to_datetime(df_mh["year_month"])
             df_mh = df_mh.sort_values("year_month").set_index("year_month")
             
-            st.markdown(f"**月別消費電力量 (kWh/月) 推移 (全 {len(df_mh)} ヶ月分)**")
+            st.markdown(f"**月別消費電力量 (kWh)**")
             if "load_kwh" in df_mh.columns and df_mh["load_kwh"].sum() > 0:
-                st.bar_chart(df_mh[["load_kwh"]], y_label="月別電力量 (kWh)")
+                st.bar_chart(df_mh[["load_kwh"]], y_label="kWh", height=120)
             
-            st.markdown(f"**月別電気代 (円/月) 推移 (全 {len(df_mh)} ヶ月分)**")
-            st.bar_chart(df_mh[["cost_yen"]], y_label="月別電気代 (円)")
+            st.markdown(f"**月別電気代 (円)**")
+            st.bar_chart(df_mh[["cost_yen"]], y_label="円", height=120)
             
         else:
-            st.info("※ 月別履歴データが読み込まれていません。左側サイドバー of 「2016年〜全期間」ボタンを押すか、CSVを取り込んでください。")
+            st.info("※ 月別履歴データがありません。サイドバーから取り込んでください。")
             
     with hist_sub_tab3:
-        st.markdown("**2016年〜2026年 電力会社・HEMS全形式 CSVログの取り込み**")
+        st.markdown("**電力会社・HEMS全形式 CSVログ取り込み**")
         
         h_summary = get_historical_load_summary()
         if h_summary["count"] > 0:
             st.success(
-                f"💾 **現在DB保存中の過去CSVデータ**: **{h_summary['count']:,} 件** | "
-                f"**対象期間**: `{h_summary['start_date']}` 〜 `{h_summary['end_date']}` | "
-                f"**総消費電力量**: **{h_summary['total_kwh']:,} kWh**"
+                f"💾 **保存中**: **{h_summary['count']:,} 件** | "
+                f"**期間**: `{h_summary['start_date']}` 〜 `{h_summary['end_date']}` | "
+                f"**総電力量**: **{h_summary['total_kwh']:,} kWh**"
             )
         else:
-            st.warning("⚠️ 現在データベースに過去CSVログは登録されていません。下記からアップロードしてください。")
+            st.warning("⚠️ 現在データベースに過去CSVログは登録されていません。")
             
-        uploaded_csv = st.file_uploader("過去の電力使用量CSVファイル（FLAG, DATE, USE, BUY, SALE等）をドラッグ＆ドロップ", type=["csv"])
+        uploaded_csv = st.file_uploader("過去の電力使用量CSVファイルをドロップ", type=["csv"])
         if uploaded_csv is not None:
             temp_path = "temp_uploaded_katene.csv"
             with open(temp_path, "wb") as f:
@@ -1091,24 +1061,19 @@ with tab3:
                 
             if res["success"]:
                 st.success(
-                    f"🎉 **インポート成功！**\n\n"
-                    f"・**取り込み件数**: **{res['total_rows']:,} 行**\n"
-                    f"・**対象期間**: `{res['start_date']}` 〜 `{res['end_date']}`\n"
-                    f"・**総消費電力量**: **{res['total_kwh']:,} kWh**\n"
-                    f"・**電気代合計**: **¥{int(res['est_cost_yen']):,}**\n\n"
-                    f"※ 「電力量(kWh)」および「電気代(円)」の両方の時系列グラフへ全自動反映されました。"
+                    f"🎉 **インポート成功！** ({res['total_rows']:,} 行)\n"
+                    f"・`{res['start_date']}` 〜 `{res['end_date']}` | **{res['total_kwh']:,} kWh** | **¥{int(res['est_cost_yen']):,}**"
                 )
                 time.sleep(1.5)
                 st.rerun()
             else:
                 st.error(f"❌ インポート失敗: {res['error']}")
                 
-        st.divider()
-        if st.button("🧪 テスト用 2016年〜2026年過去CSVサンプルデータを自動適用"):
+        if st.button("🧪 サンプル過去CSV適用"):
             import create_sample_csv
             res = import_katene_csv("sample_katene_2016_2026.csv")
             if res["success"]:
-                st.success(f"テストサンプル ({res['total_rows']:,} 行) の読み込みが完了しました！")
+                st.success(f"サンプル ({res['total_rows']:,} 行) を読み込みました！")
                 st.rerun()
 
 # ==========================================
@@ -1156,5 +1121,3 @@ with st.expander("⚙️ システム手動操作・同期（サイドバーが�
                 st.rerun()
             else:
                 st.info("同期対象の新しい履歴ログはありません。")
-
-
