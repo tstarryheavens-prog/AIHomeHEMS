@@ -243,12 +243,12 @@ def poll_and_log_all_data(config_path="config.yaml"):
     hems_status = fetch_hems_web_status(hems_config)
     
     now_str = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
-    soc = info.get("soc", 59)
+    soc = info.get("soc", 20)
     batt_w = info.get("power_w", 0)
-    batt_wh = info.get("battery_wh", 11000)
+    batt_wh = info.get("battery_wh", 0)
     mode = info.get("mode", "AUTO")
-    pv_w = info.get("pv_w", 1366)
-    cum_pv_kwh = info.get("cum_pv_kwh", 6899.8)
+    pv_w = info.get("pv_w", 0)
+    cum_pv_kwh = info.get("cum_pv_kwh", 0.0)
     
     # HEMS Web Controllerからリアルタイム買電・売電Wの直接取得試行
     grid_w = 0

@@ -108,10 +108,10 @@ class NichiconEchonetClient:
         if soc_val is None:
             # 14.9kWh ニチコンT5 蓄電池容量 (14900 Wh)
             capacity_wh = 14900
-            if wh_val >= 0:
+            if wh_val >= 0 and edt_wh is not None:
                 soc_val = min(100, max(0, int(round((wh_val / float(capacity_wh)) * 100))))
             else:
-                soc_val = 50
+                soc_val = 15
 
         pv_w_val = int.from_bytes(edt_pv_w, byteorder='big') if edt_pv_w else 0
         pv_cum_val = (int.from_bytes(edt_pv_cum, byteorder='big') / 10.0) if edt_pv_cum else 0.0
