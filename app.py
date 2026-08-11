@@ -17,7 +17,8 @@ from bulk_extract_history import start_bulk_extraction_async, get_bulk_extractio
 st.set_page_config(
     page_title="AI SMART ENERGY CONTROLLER",
     page_icon="⚡",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
 init_db()
@@ -51,7 +52,7 @@ if os.path.exists("manual_override.json"):
     except Exception:
         pass
 
-st.sidebar.title("⚡ AI HEMS OS v2.3")
+st.sidebar.title("⚡ AI HEMS OS v2.4")
 try:
     with open("config.yaml", "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
@@ -61,21 +62,21 @@ except Exception:
 broute_status = "🟢 有効" if config.get("broute", {}).get("enabled") else "🟡 シミュレーション"
 nichicon_status = "🟢 有効 (192.168.2.12)" if config.get("nichicon", {}).get("enabled") else "🟡 シミュレーション"
 
-st.sidebar.markdown(f"**位置情報**: {config.get('location', {}).get('name', 'Tokyo')}")
-st.sidebar.markdown(f"**太陽光定格**: {int(config.get('system', {}).get('pv_capacity_kw', 4))} kW")
-st.sidebar.markdown(f"**蓄電池容量**: {config.get('system', {}).get('battery_capacity_kwh', 11.1)} kWh")
+st.sidebar.markdown(f"**位置情報**: `{config.get('location', {}).get('name', 'Nagoya')}`")
+st.sidebar.markdown(f"**太陽光定格**: `{int(config.get('system', {}).get('pv_capacity_kw', 4))} kW`")
+st.sidebar.markdown(f"**蓄電池容量**: `{config.get('system', {}).get('battery_capacity_kwh', 14.9)} kWh`")
 st.sidebar.markdown(f"**ニチコンT5**: {nichicon_status}")
-st.sidebar.markdown(f"**HEMS Web**: 🟢 ONLINE")
+st.sidebar.markdown(f"**HEMS Web**: 🟢 ONLINE (192.168.2.23)")
 
 st.sidebar.divider()
 
 # 1. リアルタイム自動更新トグル
-auto_refresh = st.sidebar.toggle("🔄 リアルタイム自動更新 (5秒・暗転なし)", value=True)
+auto_refresh = st.sidebar.toggle("🔄 リアルタイム自動更新 (5秒)", value=True)
 
 st.sidebar.divider()
 
 # 2. ⚡ 緊急手動コントロール
-st.sidebar.markdown("**⚡ 緊急手動コントロール**")
+st.sidebar.markdown("### ⚡ 緊急手動コントロール")
 if override_active:
     st.sidebar.warning(f"⚠️ 一時手動介入中:\n{override_mode_str}\n({override_time_left_str})")
     if st.sidebar.button("🤖 AI自動制御に即時復帰", use_container_width=True):
@@ -108,7 +109,7 @@ else:
 st.sidebar.divider()
 
 # 3. 過去データ同期・抽出ボタン
-st.sidebar.markdown("**📥 過去データの同期・抽出操作**")
+st.sidebar.markdown("### 📥 過去データの同期・抽出操作")
 if st.sidebar.button("📥 直近14日間の履歴データを同期", use_container_width=True):
     with st.sidebar.spinner("HEMS Web コントローラから直近14日分の履歴ログを取得中..."):
         count = fetch_hems_past_days_history(days=14)
@@ -163,26 +164,26 @@ if latest_sched:
 
 st.markdown(
     f"""
-    <div class="glass-card" style="padding: 10px 14px; margin-bottom: 12px; border-color: rgba(59, 130, 246, 0.25); background: rgba(30, 41, 59, 0.5); margin-top: -20px;">
+    <div class="glass-card" style="padding: 10px 14px; margin-bottom: 12px; border-color: rgba(59, 130, 246, 0.3); background: rgba(15, 23, 42, 0.75);">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-            <span style="color:#60a5fa; font-weight:800; font-size:0.85rem;">🤖 AI最適化予測・充電計画</span>
-            <span style="font-size:0.75rem; background:rgba(59, 130, 246, 0.15); padding:2px 6px; border-radius:4px; color:#60a5fa; font-weight:700;">v2.4 OS</span>
+            <span style="color:#60a5fa; font-weight:800; font-size:0.9rem;">🤖 AI最適化予測・充電計画</span>
+            <span style="font-size:0.75rem; background:#1e3a8a; padding:2px 8px; border-radius:4px; color:#93c5fd; font-weight:700; border:1px solid #3b82f6;">v2.4 OS</span>
         </div>
-        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px; margin-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:6px; text-align:center;">
+        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px; margin-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:6px; text-align:center;">
             <div>
-                <div style="font-size:0.65rem; color:#cbd5e1;">今夜の目標SOC</div>
-                <div style="font-size:1.15rem; font-weight:800; color:#34d399;">{target_soc_val} %</div>
+                <div style="font-size:0.7rem; color:#cbd5e1;">今夜の目標SOC</div>
+                <div style="font-size:1.2rem; font-weight:900; color:#34d399;">{target_soc_val} %</div>
             </div>
             <div>
-                <div style="font-size:0.65rem; color:#cbd5e1;">翌日予想発電</div>
-                <div style="font-size:1.15rem; font-weight:800; color:#fbbf24;">{pv_est_val} kWh</div>
+                <div style="font-size:0.7rem; color:#cbd5e1;">翌日予想発電</div>
+                <div style="font-size:1.2rem; font-weight:900; color:#fbbf24;">{pv_est_val} kWh</div>
             </div>
             <div>
-                <div style="font-size:0.65rem; color:#cbd5e1;">翌日予想消費</div>
-                <div style="font-size:1.15rem; font-weight:800; color:#60a5fa;">{load_est_val} kWh</div>
+                <div style="font-size:0.7rem; color:#cbd5e1;">翌日予想消費</div>
+                <div style="font-size:1.2rem; font-weight:900; color:#60a5fa;">{load_est_val} kWh</div>
             </div>
         </div>
-        <div style="font-size:0.75rem; color:#ffffff; line-height:1.45; font-weight:600;">
+        <div style="font-size:0.78rem; color:#ffffff; line-height:1.45; font-weight:600;">
             {reason_desc}
         </div>
     </div>
@@ -198,51 +199,61 @@ st.markdown(
     /* 全体の背景とカラーテーマの調整 */
     .stApp {
         background-color: #0b0f19;
-        color: #e2e8f0;
+        color: #ffffff;
     }
     
-    /* Streamlitのデフォルトヘッダーの白い帯のみ透明化（ボタンなどのUI要素は透過表示で維持） */
-    header[data-testid="stHeader"], .stAppHeader, [data-testid="stHeader"] {
-        background: transparent !important;
-        background-color: transparent !important;
-        color: #ffffff !important;
+    /* Streamlitヘッダーの透過とボタン高可視性確保 */
+    header[data-testid="stHeader"] {
+        background-color: rgba(11, 15, 25, 0.8) !important;
+        backdrop-filter: blur(8px) !important;
     }
     
-    /* 📱 画面サイズ問わず、サイドバー開閉ボタンを左上に常時・目立つように固定配置 */
+    /* 📱 サイドバー開閉アイコンボタンの視認性・浮き彫り化 (暗闇で絶対に消えないデザイン) */
     button[data-testid="stSidebarCollapseButton"],
     [data-testid="stSidebarHeader"] button,
-    [data-testid="stHeader"] button[aria-label*="sidebar"],
-    [data-testid="stHeader"] button[aria-label*="Sidebar"] {
-        display: flex !important;
-        visibility: visible !important;
-        position: fixed !important;
-        top: 10px !important;
-        left: 12px !important;
-        z-index: 9999999 !important;
-        background-color: #1e293b !important; /* 濃い紺色で背景から浮き出させる */
+    [data-testid="stHeader"] button {
+        background-color: #1e293b !important;
         color: #ffffff !important;
-        border-radius: 10px !important;
-        width: 42px !important;
-        height: 42px !important;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5) !important;
-        align-items: center !important;
-        justify-content: center !important;
-        border: 2px solid #3b82f6 !important; /* 目立つ青色枠線 */
-        cursor: pointer !important;
+        border: 2px solid #3b82f6 !important;
+        border-radius: 8px !important;
+        box-shadow: 0 0 12px rgba(59, 130, 246, 0.5) !important;
     }
     button[data-testid="stSidebarCollapseButton"]:hover,
     [data-testid="stSidebarHeader"] button:hover {
         background-color: #3b82f6 !important;
         color: #ffffff !important;
-        box-shadow: 0 0 15px rgba(59, 130, 246, 0.8) !important;
+    }
+    button[data-testid="stSidebarCollapseButton"] svg,
+    [data-testid="stSidebarHeader"] button svg {
+        fill: #ffffff !important;
+        color: #ffffff !important;
+        stroke: #ffffff !important;
     }
 
-    /* 📱 モバイル文字視認性徹底強化 */
+    /* 📱 サイドバー全体の高コントラスト背景・文字色固定 */
+    [data-testid="stSidebar"] {
+        background-color: #0f172a !important; /* 濃紺 */
+        border-right: 1px solid rgba(59, 130, 246, 0.3) !important;
+    }
+    [data-testid="stSidebar"] * {
+        color: #ffffff !important; /* 文字をすべて純白に固定して背景と同化するのを完全防止 */
+    }
+    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
+        color: #38bdf8 !important; /* 見出しは鮮やかなアイスブルー */
+        font-weight: 800 !important;
+    }
+    [data-testid="stSidebar"] code {
+        background-color: #1e293b !important;
+        color: #fbbf24 !important; /* コード・強調数値は黄色 */
+        border: 1px solid #3b82f6 !important;
+    }
+    
+    /* 📱 全画面文字視認性徹底保証 */
     .stMarkdown, .stText, p, span, div, label, li {
-        color: #f8fafc !important; /* ほぼ完全な白に近いグレーで文字潰れを防止 */
+        color: #f8fafc !important;
     }
     small, .stCaption {
-        color: #cbd5e1 !important; /* キャプションを十分に明るい色へ */
+        color: #cbd5e1 !important;
     }
     [data-testid="stMetricValue"] {
         color: #ffffff !important;
@@ -250,99 +261,63 @@ st.markdown(
     [data-testid="stMetricLabel"] {
         color: #cbd5e1 !important;
     }
-    /* サイドバーの背景も高級感ある濃紺に */
-    [data-testid="stSidebar"] {
-        background-color: #0d1527 !important;
-        border-right: 1px solid rgba(255, 255, 255, 0.08);
-    }
-    
-    /* 最上部のカードにトグルボタン用の左マージン（余白）を開ける */
-    .glass-card:first-of-type {
-        margin-top: 10px !important;
-        padding-left: 60px !important;
-        position: relative !important;
-    }
 
-
-    
-    /* Streamlitの再実行時のフェード（グレーアウト）を完全に無効化 */
-    div[data-stale="true"] {
+    /* 再実行時のフェード（グレーアウト）無効化 */
+    div[data-stale="true"], [data-testid="stAppViewContainer"] [data-stale="true"], div[data-chunks-to-draw] {
         opacity: 1 !important;
         filter: none !important;
-    }
-    [data-testid="stAppViewContainer"] [data-stale="true"] {
-        opacity: 1 !important;
-        filter: none !important;
-    }
-    div[data-chunks-to-draw] {
-        opacity: 1 !important;
     }
     
     /* ガラスモルフィズム風のカスタムカードデザイン */
     .glass-card {
-        background: rgba(22, 28, 45, 0.45);
+        background: rgba(15, 23, 42, 0.65);
         backdrop-filter: blur(12px);
         -webkit-backdrop-filter: blur(12px);
-        border: 1px solid rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 16px;
         padding: 20px;
         margin-bottom: 20px;
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
     }
     
-    /* アラート・バナーのスタイル調整 */
-    .stAlert {
-        border-radius: 12px !important;
-        background-color: rgba(30, 41, 59, 0.7) !important;
-        border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    }
-    
-    /* タブのスタイル調整 (ユニバーサルかつ先進的) */
+    /* タブのスタイル調整 */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
-        background-color: rgba(15, 23, 42, 0.5);
+        background-color: rgba(15, 23, 42, 0.7);
         padding: 6px;
         border-radius: 12px;
-        border: 1px solid rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
     }
     .stTabs [data-baseweb="tab"] {
         height: 44px;
         white-space: pre-wrap;
         background-color: transparent;
         border-radius: 8px;
-        color: #94a3b8;
+        color: #cbd5e1 !important;
         font-weight: 700;
         border: none;
         padding: 0 16px;
-        transition: all 0.2s ease-in-out;
-    }
-    .stTabs [data-baseweb="tab"]:hover {
-        color: #f1f5f9;
-        background-color: rgba(255, 255, 255, 0.03);
     }
     .stTabs [aria-selected="true"] {
-        background-color: #3b82f6 !important;
+        background-color: #2563eb !important;
         color: #ffffff !important;
-        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
     }
     
-    /* 📱 iPhoneダークモード視認性強化: ボタンの白文字・高コントラスト固定 */
-    div.stButton > button, [data-testid="stSidebar"] button, [data-testid="stSidebar"] button:active, [data-testid="stSidebar"] button:focus {
+    /* 📱 ボタンの高コントラスト・はっきり視認できるスタイル */
+    div.stButton > button, [data-testid="stSidebar"] button {
         background-color: #1e293b !important;
         color: #ffffff !important;
         border: 2px solid #3b82f6 !important;
         border-radius: 8px !important;
-        transition: all 0.2s ease-in-out !important;
-        font-weight: 700 !important;
+        font-weight: 800 !important;
         font-size: 0.95rem !important;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
     }
     div.stButton > button:hover, [data-testid="stSidebar"] button:hover {
-        background-color: #3b82f6 !important;
+        background-color: #2563eb !important;
         color: #ffffff !important;
-        box-shadow: 0 0 10px rgba(59, 130, 246, 0.6) !important;
-    }
-    div.stButton > button:active, div.stButton > button:focus {
-        color: #ffffff !important;
+        box-shadow: 0 0 12px rgba(37, 99, 235, 0.8) !important;
     }
     </style>
     """,
