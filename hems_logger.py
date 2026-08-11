@@ -95,6 +95,9 @@ def check_and_apply_time_based_battery_schedule(client, config=None):
             print(f"[HEMSLogger] Storm Watch Active! Forcing CHARGE mode (0x42).")
         else:
             # 2. 通常スケジュール制御
+            # 中部電力「夜とく」ナイトタイム判定 (21:00〜07:00)
+            is_yorytoku_night = (now_hour >= 21 or now_hour < 7)
+            
             # 蓄電池寿命最適化 JIT充電時間帯 (03:00〜06:30)
             is_jit_charge_time = (3 <= now_hour < 6) or (now_hour == 6 and now_minute <= 30)
             
@@ -115,9 +118,16 @@ def check_and_apply_time_based_battery_schedule(client, config=None):
                 # AI予測スケジュールが取得できなかった場合の安全デフォルト（FIT期間中は100%充電、卒FIT後は50%充電）
                 target_soc = 100.0 if is_fit_active else 50.0
 
-            if is_jit_charge_time and target_soc > 50:
-                target_mode = 0x42 # 深夜JIT急速充電モード (03:00〜06:30)
+            # 夜間電力時間帯(21:00〜07:00)の制御
+            if is_yorytoku_night:
+                if is_jit_charge_time and target_soc > 50:
+                    target_mode = 0x42 # 深夜JIT急速充電モード (03:00〜06:30)
+                else:
+                    # 💡 深夜料金時間帯は放電せず、系統からの安い電気の購入を優先するため
+                    # 蓄電池を「0x44 (待機)」モードにして放電を完全に停止します。
+                    target_mode = 0x44
             else:
+                # 昼間時間帯 (07:00〜21:00) の制御
                 if is_fit_active:
                     target_mode = 0x43 # FIT期間中昼間: 31円高額売電・放電優先モード
                 else:
@@ -133,10 +143,15 @@ def check_and_apply_time_based_battery_schedule(client, config=None):
     except Exception as e:
         # 重大な例外（DB障害、API崩壊など）が発生した場合の究極のフェイルセーフフォールバック
         print(f"[HEMSLogger] CRITICAL ERROR in schedule logic: {e}. Executing fail-safe fallback.")
-        # 深夜JIT充電帯なら 0x42、昼間なら 0x45(自家消費優先・安全モード)
+        # 深夜料金時間帯 (21:00〜07:00) 判定
+        is_yorytoku_night = (now_hour >= 21 or now_hour < 7)
         is_jit_charge_time = (3 <= now_hour < 6) or (now_hour == 6 and now_minute <= 30)
-        if is_jit_charge_time:
-            target_mode = 0x42
+        
+        if is_yorytoku_night:
+            if is_jit_charge_time:
+                target_mode = 0x42
+            else:
+                target_mode = 0x44 # 待機
         else:
             target_mode = 0x45 if not is_fit_active else 0x43
 
@@ -146,7 +161,8 @@ def check_and_apply_time_based_battery_schedule(client, config=None):
         try:
             info = client.get_full_system_info()
             curr_mode = info.get("mode", "AUTO")
-            expected_str = "CHARGE" if target_mode == 0x42 else ("DISCHARGE" if target_mode == 0x43 else "AUTO")
+            expected_str = "CHARGE" if target_mode == 0x42 else ("DISCHARGE" if target_mode == 0x43 else ("STANDBY" if target_mode == 0x44 else "AUTO"))
+
 
             if curr_mode != expected_str:
                 print(f"[HEMSLogger] Command: Set Nichicon mode to {expected_str} (target: {hex(target_mode)}) (Attempt {attempt}/3)...")

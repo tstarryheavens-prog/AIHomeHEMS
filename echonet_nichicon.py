@@ -111,7 +111,17 @@ class NichiconEchonetClient:
         pv_cum_val = (int.from_bytes(edt_pv_cum, byteorder='big') / 10.0) if edt_pv_cum else 0.0
 
         mode_code = edt_mode[0] if edt_mode else 0x45
-        mode_str = "AUTO" if mode_code == 0x45 else ("CHARGE" if mode_code == 0x42 else "DISCHARGE")
+        if mode_code == 0x42:
+            mode_str = "CHARGE"
+        elif mode_code == 0x43:
+            mode_str = "DISCHARGE"
+        elif mode_code == 0x44:
+            mode_str = "STANDBY"
+        elif mode_code == 0x45:
+            mode_str = "AUTO"
+        else:
+            mode_str = f"UNKNOWN ({hex(mode_code)})"
+
 
         return {
             "connected": True,
