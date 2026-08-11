@@ -473,7 +473,7 @@ def render_tab1_live():
     pv_w_int = int(round(latest_log.get('pv_w', 0)))
     grid_w_int = int(round(latest_log.get('grid_w', 0)))
     battery_w_int = int(round(latest_log.get('battery_w', 0)))
-    soc_int = int(round(latest_log.get('battery_soc', 50)))
+    soc_int = int(round(latest_log.get('soc', latest_log.get('battery_soc', 15))))
     cum_pv_int = int(round(latest_log.get('cum_pv_kwh', 0)))
 
     # 小数表現の作成
