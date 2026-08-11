@@ -176,6 +176,35 @@ st.markdown(
         border-right: 1px solid rgba(255, 255, 255, 0.08);
     }
     
+    /* 📱 モバイル表示時のみ、サイドバー開閉ボタンを目立たせる */
+    @media (max-width: 768px) {
+        button[data-testid="stSidebarCollapseButton"] {
+            background-color: #3b82f6 !important;
+            color: #ffffff !important;
+            border-radius: 50% !important;
+            width: 44px !important;
+            height: 44px !important;
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.5) !important;
+            position: fixed !important;
+            top: 10px !important;
+            left: 10px !important;
+            z-index: 999999 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            border: 1px solid rgba(255, 255, 255, 0.25) !important;
+        }
+        button[data-testid="stSidebarCollapseButton"]::after {
+            content: "⚙️" !important;
+            font-size: 1.05rem !important;
+            position: absolute !important;
+        }
+        button[data-testid="stSidebarCollapseButton"] svg {
+            display: none !important; /* 標準の矢印アイコンを消して設定ギアを優先 */
+        }
+    }
+
+    
     /* Streamlitの再実行時のフェード（グレーアウト）を完全に無効化 */
     div[data-stale="true"] {
         opacity: 1 !important;
@@ -486,6 +515,12 @@ def render_tab1_live():
     # ==========================================
     st.markdown("##### 📈 全電力トレンド推移 (過去48時間等)")
     
+    # 1. グラフ用の描画エリアを先に定義（表示が上になる）
+    chart_area = st.container()
+    
+    # 2. グラフ選択コントロール用の表示エリアを定義（表示が下になる）
+    control_area = st.container()
+    
     limit_map = {
         "📅 全期間 過去全ログ (約35,000件)": 100000,
         "📅 直近 48時間 (約34,560件)": 34560,
@@ -494,96 +529,98 @@ def render_tab1_live():
         "🕐 直近 1時間 (約720件)": 720
     }
     
-    tr_col1, tr_col2 = st.columns([1.5, 1])
-    with tr_col1:
-        chart_option = st.radio(
-            "グラフ指標:",
-            ["☀️ 太陽光発電 (W)", "⚡ 買電電力 (W)", "🔋 蓄電池 SOC (%) ＆ 充放電 (W)", "📊 全項目重ね合わせ比較"],
-            index=3,
-            horizontal=True,
-            key="live_chart_option",
-            label_visibility="collapsed"
-        )
-    with tr_col2:
-        range_option = st.selectbox(
-            "期間:",
-            [
-                "📅 全期間 過去全ログ (約35,000件)",
-                "📅 直近 48時間 (約34,560件)",
-                "📅 直近 24時間 (約17,280件)",
-                "🕕 直近 6時間 (約4,320件)",
-                "🕐 直近 1時間 (約720件)"
-            ],
-            index=1, # 初期表示を直近48時間に設定！
-            key="live_range_option",
-            label_visibility="collapsed"
-        )
+    with control_area:
+        tr_col1, tr_col2 = st.columns([1.5, 1])
+        with tr_col1:
+            chart_option = st.radio(
+                "グラフ指標:",
+                ["☀️ 太陽光発電 (W)", "⚡ 買電電力 (W)", "🔋 蓄電池 SOC (%) ＆ 充放電 (W)", "📊 全項目重ね合わせ比較"],
+                index=3,
+                horizontal=True,
+                key="live_chart_option",
+                label_visibility="collapsed"
+            )
+        with tr_col2:
+            range_option = st.selectbox(
+                "期間:",
+                [
+                    "📅 全期間 過去全ログ (約35,000件)",
+                    "📅 直近 48時間 (約34,560件)",
+                    "📅 直近 24時間 (約17,280件)",
+                    "🕕 直近 6時間 (約4,320件)",
+                    "🕐 直近 1時間 (約720件)"
+                ],
+                index=1, # 初期表示を直近48時間に設定！
+                key="live_range_option",
+                label_visibility="collapsed"
+            )
         
     fetch_limit = limit_map.get(range_option, 34560)
     telemetry_hist = get_recent_telemetry(limit=fetch_limit)
     
-    if telemetry_hist:
-        df_th = pd.DataFrame(telemetry_hist)
-        df_th["timestamp"] = pd.to_datetime(df_th["timestamp"])
-        df_th = df_th.sort_values("timestamp")
-        num_cols = [c for c in ["pv_w", "grid_w", "battery_w", "battery_soc"] if c in df_th.columns]
-        
-        df_th_index = df_th.set_index("timestamp")
-        if len(df_th) > 10000:
-            df_th_plot = df_th_index[num_cols].resample('10min').mean().dropna()
-        elif len(df_th) > 2000:
-            df_th_plot = df_th_index[num_cols].resample('2min').mean().dropna()
-        else:
-            df_th_plot = df_th_index[num_cols]
+    with chart_area:
+        if telemetry_hist:
+            df_th = pd.DataFrame(telemetry_hist)
+            df_th["timestamp"] = pd.to_datetime(df_th["timestamp"])
+            df_th = df_th.sort_values("timestamp")
+            num_cols = [c for c in ["pv_w", "grid_w", "battery_w", "battery_soc"] if c in df_th.columns]
             
-        import altair as alt
-        
-        def draw_altair_chart_compact(df, y_cols, y_label):
-            df_reset = df.reset_index()
-            rename_dict = {
-                "pv_w": "太陽光発電 (W)",
-                "grid_w": "買電/売電 (W)",
-                "battery_w": "蓄電池充放電 (W)",
-                "battery_soc": "蓄電池 SOC (%)"
-            }
-            df_plot_renamed = df_reset.rename(columns=rename_dict)
-            plot_cols = [rename_dict[c] for c in y_cols if c in rename_dict]
-            df_melt = df_plot_renamed.melt("timestamp", value_vars=plot_cols, var_name="指標", value_name="値")
+            df_th_index = df_th.set_index("timestamp")
+            if len(df_th) > 10000:
+                df_th_plot = df_th_index[num_cols].resample('10min').mean().dropna()
+            elif len(df_th) > 2000:
+                df_th_plot = df_th_index[num_cols].resample('2min').mean().dropna()
+            else:
+                df_th_plot = df_th_index[num_cols]
+                
+            import altair as alt
             
-            color_scale = alt.Scale(
-                domain=["太陽光発電 (W)", "買電/売/売電 (W)", "蓄電池充放電 (W)", "蓄電池 SOC (%)"],
-                range=["#fbbf24", "#f87171", "#38bdf8", "#34d399"]
-            )
-            
-            chart = alt.Chart(df_melt).mark_line(interpolate='monotone', strokeWidth=1.5).encode(
-                x=alt.X('timestamp:T', title=None, axis=alt.Axis(format='%m/%d %H:%M', grid=True, gridColor='rgba(255,255,255,0.06)', labelColor='#94a3b8')),
-                y=alt.Y('値:Q', title=None, axis=alt.Axis(grid=True, gridColor='rgba(255,255,255,0.06)', labelColor='#94a3b8')),
-                color=alt.Color('指標:N', scale=color_scale, legend=alt.Legend(title=None, labelColor='#f1f5f9', direction='horizontal', orient='bottom')),
-                tooltip=[
-                    alt.Tooltip('timestamp:T', title='時刻', format='%m/%d %H:%M'),
-                    alt.Tooltip('指標:N', title='項目'),
-                    alt.Tooltip('値:Q', title='値')
-                ]
-            ).properties(
-                height=180 # 高さを180pxに抑え、スマホ画面にコンパクトに配置
-            ).configure_view(
-                strokeOpacity=0
-            ).configure(
-                background='transparent'
-            )
-            st.altair_chart(chart, use_container_width=True)
-
-        if chart_option == "☀️ 太陽光発電 (W)":
-            draw_altair_chart_compact(df_th_plot, ["pv_w"], "W")
-        elif chart_option == "⚡ 買電電力 (W)":
-            draw_altair_chart_compact(df_th_plot, ["grid_w"], "W")
-        elif chart_option == "🔋 蓄電池 SOC (%) ＆ 充放電 (W)":
-            draw_altair_chart_compact(df_th_plot, ["battery_soc"], "%")
-            draw_altair_chart_compact(df_th_plot, ["battery_w"], "W")
-        else:
-            draw_altair_chart_compact(df_th_plot, ["pv_w", "grid_w", "battery_w"], "W")
-            draw_altair_chart_compact(df_th_plot, ["battery_soc"], "%")
-
+            def draw_altair_chart_compact(df, y_cols, y_label):
+                df_reset = df.reset_index()
+                rename_dict = {
+                    "pv_w": "太陽光発電 (W)",
+                    "grid_w": "買電/売電 (W)",
+                    "battery_w": "蓄電池充放電 (W)",
+                    "battery_soc": "蓄電池 SOC (%)"
+                }
+                df_plot_renamed = df_reset.rename(columns=rename_dict)
+                plot_cols = [rename_dict[c] for c in y_cols if c in rename_dict]
+                df_melt = df_plot_renamed.melt("timestamp", value_vars=plot_cols, var_name="指標", value_name="値")
+                
+                color_scale = alt.Scale(
+                    domain=["太陽光発電 (W)", "買電/売/売電 (W)", "蓄電池充放電 (W)", "蓄電池 SOC (%)"],
+                    range=["#fbbf24", "#f87171", "#38bdf8", "#34d399"]
+                )
+                
+                chart = alt.Chart(df_melt).mark_line(interpolate='monotone', strokeWidth=1.5).encode(
+                    x=alt.X('timestamp:T', title=None, axis=alt.Axis(format='%m/%d %H:%M', grid=True, gridColor='rgba(255,255,255,0.06)', labelColor='#94a3b8')),
+                    y=alt.Y('値:Q', title=None, axis=alt.Axis(grid=True, gridColor='rgba(255,255,255,0.06)', labelColor='#94a3b8')),
+                    color=alt.Color('指標:N', scale=color_scale, legend=alt.Legend(title=None, labelColor='#f1f5f9', direction='horizontal', orient='bottom')),
+                    tooltip=[
+                        alt.Tooltip('timestamp:T', title='時刻', format='%m/%d %H:%M'),
+                        alt.Tooltip('指標:N', title='項目'),
+                        alt.Tooltip('値:Q', title='値')
+                    ]
+                ).properties(
+                    height=180 # 高さを180pxに抑え、スマホ画面にコンパクトに配置
+                ).configure_view(
+                    strokeOpacity=0
+                ).configure(
+                    background='transparent'
+                )
+                st.altair_chart(chart, use_container_width=True)
+    
+            if chart_option == "☀️ 太陽光発電 (W)":
+                draw_altair_chart_compact(df_th_plot, ["pv_w"], "W")
+            elif chart_option == "⚡ 買電電力 (W)":
+                draw_altair_chart_compact(df_th_plot, ["grid_w"], "W")
+            elif chart_option == "🔋 蓄電池 SOC (%) ＆ 充放電 (W)":
+                draw_altair_chart_compact(df_th_plot, ["battery_soc"], "%")
+                draw_altair_chart_compact(df_th_plot, ["battery_w"], "W")
+            else:
+                draw_altair_chart_compact(df_th_plot, ["pv_w", "grid_w", "battery_w"], "W")
+                draw_altair_chart_compact(df_th_plot, ["battery_soc"], "%")
+    
     st.divider()
 
     # 2. 各部屋・分電盤回路の消費電力モニタリング（横棒グラフ ＋ 右側数値）
@@ -952,4 +989,51 @@ with tab3:
             if res["success"]:
                 st.success(f"テストサンプル ({res['total_rows']:,} 行) の読み込みが完了しました！")
                 st.rerun()
+
+# ==========================================
+# ⚙️ メイン画面下部フォールバック操作パネル (サイドバーが開けない環境用)
+# ==========================================
+st.divider()
+with st.expander("⚙️ システム手動操作・同期（サイドバーが開けない場合）", expanded=False):
+    st.markdown("##### ⚡ 緊急手動コントロール")
+    if override_active:
+        st.warning(f"⚠️ 一時手動介入中: {override_mode_str} ({override_time_left_str})")
+        if st.button("🤖 AI自動制御に復帰", key="fb_restore_btn", use_container_width=True):
+            if os.path.exists("manual_override.json"):
+                os.remove("manual_override.json")
+            st.success("AI自動制御へ復帰しました！")
+            time.sleep(0.5)
+            st.rerun()
+    else:
+        st.success("🤖 AI自動運転中 (手動介入なし)")
+        fb_c1, fb_c2 = st.columns(2)
+        with fb_c1:
+            if st.button("⚡ 充電 (1h)", key="fb_charge_btn", use_container_width=True):
+                expire_at = (now_dt + timedelta(hours=1)).isoformat()
+                with open("manual_override.json", "w", encoding="utf-8") as f:
+                    json.dump({"override_mode": 0x42, "expire_at": expire_at, "label": "手動1時間強制充電"}, f)
+                st.success("1h充電をセット！")
+                time.sleep(0.5)
+                st.rerun()
+        with fb_c2:
+            if st.button("⏸️ 待機 (3h)", key="fb_standby_btn", use_container_width=True):
+                expire_at = (now_dt + timedelta(hours=3)).isoformat()
+                with open("manual_override.json", "w", encoding="utf-8") as f:
+                    json.dump({"override_mode": 0x44, "expire_at": expire_at, "label": "手動3時間強制待機"}, f)
+                st.success("3h待機をセット！")
+                time.sleep(0.5)
+                st.rerun()
+                
+    st.divider()
+    st.markdown("##### 📥 過去データの同期")
+    if st.button("📥 直近14日間の歴史データを同期", key="fb_sync_btn", use_container_width=True):
+        with st.spinner("HEMS Web コントローラから直近14日分のログを取得中..."):
+            count = fetch_hems_past_days_history(days=14)
+            if count > 0:
+                st.success(f"直近 {count} 日分のログを同期しました！")
+                time.sleep(0.8)
+                st.rerun()
+            else:
+                st.info("同期対象の新しいログはありません。")
+
 
