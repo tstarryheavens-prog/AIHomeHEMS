@@ -42,37 +42,25 @@ class NichiconEchonetClient:
         return bytes([EHD1_ECHONET_LITE, EHD2_FORMAT_1]) + tid_bytes + seoj + deoj + bytes([esv, 1, epc, pdc]) + edt
 
     def _query(self, deoj, epc):
+        """
+        ニチコンT5固有仕様: 独自拡張 TCP/IP (Port 3610 / 1369) 専用通信
+        """
         ports_to_try = [self.port, 3610, 1369]
         for p in dict.fromkeys(ports_to_try):
-            # 1. Try TCP Connection
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(2.5)
-                sock.connect((self.ip_address, p))
-                frame = self._build_frame(CLASS_CONTROLLER, deoj, ESV_GET_REQ, epc)
-                sock.sendall(frame)
-                data = sock.recv(1024)
-                sock.close()
-                if len(data) >= 14 and data[10] in (0x72, 0x52):
-                    pdc = data[13]
-                    return data[14:14+pdc]
-            except Exception:
-                pass
-
-            # 2. Try UDP Broadcast/Unicast (Standard ECHONET Lite Port 3610)
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                sock.settimeout(2.0)
-                frame = self._build_frame(CLASS_CONTROLLER, deoj, ESV_GET_REQ, epc)
-                sock.sendto(frame, (self.ip_address, p))
-                data, _ = sock.recvfrom(1024)
-                sock.close()
-                if len(data) >= 14 and data[10] in (0x72, 0x52):
-                    pdc = data[13]
-                    return data[14:14+pdc]
-            except Exception:
-                pass
-
+            for retry in range(2):
+                try:
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(3.0) # ニチコン基板応答用の安全タイムアウト
+                    sock.connect((self.ip_address, p))
+                    frame = self._build_frame(CLASS_CONTROLLER, deoj, ESV_GET_REQ, epc)
+                    sock.sendall(frame)
+                    data = sock.recv(1024)
+                    sock.close()
+                    if len(data) >= 14 and data[10] in (0x72, 0x52):
+                        pdc = data[13]
+                        return data[14:14+pdc]
+                except Exception:
+                    time.sleep(0.2)
         return None
 
     def get_full_system_info(self):
