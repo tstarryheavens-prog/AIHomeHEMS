@@ -25,6 +25,32 @@ init_db()
 # ==========================================
 # ⚡ SMART ENERGY OS (サイドバーシステム設定)
 # ==========================================
+from datetime import datetime, timezone, timedelta
+JST = timezone(timedelta(hours=9))
+now_dt = datetime.now(JST)
+
+# 手動オーバーライド状態の読み込み
+override_active = False
+override_mode_str = ""
+override_time_left_str = ""
+
+if os.path.exists("manual_override.json"):
+    try:
+        with open("manual_override.json", "r", encoding="utf-8") as f:
+            ov_data = json.load(f)
+        expire_dt = datetime.fromisoformat(ov_data["expire_at"])
+        if now_dt < expire_dt:
+            override_active = True
+            override_mode = ov_data["override_mode"]
+            override_mode_str = "強制充電 (0x42)" if override_mode == 0x42 else "強制待機 (0x44)"
+            time_diff = expire_dt - now_dt
+            mins = int(time_diff.total_seconds() / 60)
+            override_time_left_str = f"残り {mins} 分"
+        else:
+            os.remove("manual_override.json")
+    except Exception:
+        pass
+
 st.sidebar.title("⚡ SMART ENERGY OS")
 try:
     with open("config.yaml", "r", encoding="utf-8") as f:
@@ -32,35 +58,52 @@ try:
 except Exception:
     config = {}
 
-broute_status = "🟢 有効" if config.get("broute", {}).get("enabled") else "🟡 シミュレーション (モック)"
-nichicon_status = "🟢 有効 (192.168.2.12:3610)" if config.get("nichicon", {}).get("enabled") else "🟡 シミュレーション"
+broute_status = "🟢 有効" if config.get("broute", {}).get("enabled") else "🟡 シミュレーション"
+nichicon_status = "🟢 有効 (192.168.2.12)" if config.get("nichicon", {}).get("enabled") else "🟡 シミュレーション"
 
 st.sidebar.markdown(f"**位置情報**: {config.get('location', {}).get('name', 'Tokyo')}")
 st.sidebar.markdown(f"**太陽光定格**: {int(config.get('system', {}).get('pv_capacity_kw', 4))} kW")
 st.sidebar.markdown(f"**蓄電池容量**: {config.get('system', {}).get('battery_capacity_kwh', 11.1)} kWh")
 st.sidebar.markdown(f"**ニチコンT5**: {nichicon_status}")
-st.sidebar.markdown(f"**HEMS Web (192.168.2.23)**: 🟢 ONLINE")
+st.sidebar.markdown(f"**HEMS Web**: 🟢 ONLINE")
 
 st.sidebar.divider()
 
 # 1. リアルタイム自動更新トグル
-auto_refresh = st.sidebar.toggle("🔄 リアルタイム自動更新 (5秒周期・暗転なし)", value=True)
+auto_refresh = st.sidebar.toggle("🔄 リアルタイム自動更新 (5秒・暗転なし)", value=True)
 
-# 2. ネットワークスキャン＆再計算ボタン
-st.sidebar.markdown("**🔍 機器検出 ＆ 最適化**")
-if st.sidebar.button("📡 サブネットをスキャンして自動接続", use_container_width=True):
-    with st.sidebar.spinner("ローカルネットワーク(3610/TCP)を検索中..."):
-        device = auto_update_config_with_discovered_ip()
-        if device:
-            st.sidebar.success(f"機器を発見しました！\nIP: {device['ip']} ({device['type']})")
+st.sidebar.divider()
+
+# 2. ⚡ 緊急手動コントロール
+st.sidebar.markdown("**⚡ 緊急手動コントロール**")
+if override_active:
+    st.sidebar.warning(f"⚠️ 一時手動介入中:\n{override_mode_str}\n({override_time_left_str})")
+    if st.sidebar.button("🤖 AI自動制御に即時復帰", use_container_width=True):
+        if os.path.exists("manual_override.json"):
+            os.remove("manual_override.json")
+        st.sidebar.success("AI自動制御へ復帰しました！")
+        time.sleep(0.5)
+        st.rerun()
+else:
+    st.sidebar.success("🤖 AI自動運転中")
+    
+    col_charge, col_standby = st.sidebar.columns(2)
+    with col_charge:
+        if st.sidebar.button("⚡ 充電 (1h)", use_container_width=True, help="1時間強制充電"):
+            expire_at = (now_dt + timedelta(hours=1)).isoformat()
+            with open("manual_override.json", "w", encoding="utf-8") as f:
+                json.dump({"override_mode": 0x42, "expire_at": expire_at, "label": "手動1時間強制充電"}, f)
+            st.sidebar.success("1h充電をセット！")
+            time.sleep(0.5)
             st.rerun()
-        else:
-            st.sidebar.warning("ネットワーク上に ECHONET TCP 機器が見つかりませんでした。")
-
-if st.sidebar.button("🔄 翌日最適化の再計算実行", use_container_width=True):
-    optimizer = PostFitOptimizer()
-    optimizer.calculate_optimal_schedule()
-    st.sidebar.success("再計算が完了しました！")
+    with col_standby:
+        if st.sidebar.button("⏸️ 待機 (3h)", use_container_width=True, help="3時間放電停止"):
+            expire_at = (now_dt + timedelta(hours=3)).isoformat()
+            with open("manual_override.json", "w", encoding="utf-8") as f:
+                json.dump({"override_mode": 0x44, "expire_at": expire_at, "label": "手動3時間強制待機"}, f)
+            st.sidebar.success("3h待機をセット！")
+            time.sleep(0.5)
+            st.rerun()
 
 st.sidebar.divider()
 
@@ -71,14 +114,19 @@ if st.sidebar.button("📥 直近14日間の歴史データを同期", use_conta
         count = fetch_hems_past_days_history(days=14)
         if count > 0:
             st.sidebar.success(f"直近 {count} 日分のログを同期しました！")
+            time.sleep(0.8)
             st.rerun()
+        else:
+            st.sidebar.info("同期対象の新しいログはありません。")
 
 if st.sidebar.button("⚡ 2016年〜全期間(約10年)一括抽出", use_container_width=True):
     if start_bulk_extraction_async(start_year=2016, end_year=2026):
         st.sidebar.success("バックグラウンド一括抽出を開始しました！画面上部に進捗が表示されます。")
+        time.sleep(0.8)
         st.rerun()
     else:
         st.sidebar.warning("すでに一括抽出タスクが実行中です。")
+
 
 
 # ==========================================
@@ -99,7 +147,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# ガラスモルフィズム ＆ チラつき防止カスタムCSSの挿入
+# ガラスモルフィズム ＆ チラつき防止カスタムCSS of 挿入
 st.markdown(
     """
     <style>
@@ -107,6 +155,25 @@ st.markdown(
     .stApp {
         background-color: #0b0f19;
         color: #e2e8f0;
+    }
+    
+    /* 📱 モバイル文字視認性徹底強化 */
+    .stMarkdown, .stText, p, span, div, label, li {
+        color: #f8fafc !important; /* ほぼ完全な白に近いグレーで文字潰れを防止 */
+    }
+    small, .stCaption {
+        color: #cbd5e1 !important; /* キャプションを十分に明るい色へ */
+    }
+    [data-testid="stMetricValue"] {
+        color: #ffffff !important;
+    }
+    [data-testid="stMetricLabel"] {
+        color: #cbd5e1 !important;
+    }
+    /* サイドバーの背景も高級感ある濃紺に */
+    [data-testid="stSidebar"] {
+        background-color: #0d1527 !important;
+        border-right: 1px solid rgba(255, 255, 255, 0.08);
     }
     
     /* Streamlitの再実行時のフェード（グレーアウト）を完全に無効化 */
@@ -193,118 +260,10 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# 📡 スマホ用フローティングボタンバーのDOM移動JavaScript（高さ0の非表示iframeで実行）
-components.html(
-    """
-    <script>
-    function initFloatingBar() {
-        const parentDoc = window.parent.document;
-        if (!parentDoc) return;
-        
-        // フローティングバーの作成
-        let bar = parentDoc.getElementById('custom-floating-bar');
-        if (!bar) {
-            bar = parentDoc.createElement('div');
-            bar.id = 'custom-floating-bar';
-            bar.style.position = 'fixed';
-            bar.style.bottom = '0';
-            bar.style.left = '0';
-            bar.style.right = '0';
-            bar.style.background = 'rgba(15, 23, 42, 0.93)';
-            bar.style.backdropFilter = 'blur(12px)';
-            bar.style.webkitBackdropFilter = 'blur(12px)';
-            bar.style.borderTop = '1px solid rgba(255, 255, 255, 0.12)';
-            bar.style.padding = '8px 12px';
-            bar.style.display = 'flex';
-            bar.style.justifyContent = 'space-around';
-            bar.style.gap = '8px';
-            bar.style.zIndex = '999999';
-            parentDoc.body.appendChild(bar);
-            
-            // 下部ボタンと被らないように親コンテナの最下部に余白を追加
-            const viewContainer = parentDoc.querySelector('[data-testid="stAppViewContainer"]');
-            if (viewContainer) {
-                viewContainer.style.paddingBottom = '60px';
-            }
-        }
-        
-        // クイック設定内のStreamlitボタンを探してバーに移動
-        const buttons = parentDoc.querySelectorAll('button');
-        buttons.forEach(btn => {
-            const text = btn.innerText || '';
-            // 移動させるボタン名を選択
-            if (text.includes('📡 サブネット') || text.includes('翌日最適化') || text.includes('直近14日間')) {
-                if (btn.parentElement !== bar) {
-                    bar.appendChild(btn);
-                    btn.style.width = '100%';
-                    btn.style.margin = '0';
-                    btn.style.fontSize = '0.75rem';
-                    btn.style.padding = '8px 2px';
-                    btn.style.height = '38px';
-                    // モバイルでのみ表示
-                    btn.className = btn.className + ' custom-floated-btn';
-                }
-            }
-        });
-    }
-    
-    // 定期監視
-    setInterval(initFloatingBar, 800);
-    </script>
-    """,
-    height=0
-)
 
 
 
-# ⚙️ モバイル用クイック操作パネル (スマホではサイドバーが隠れるためメイン画面にも折りたたみで配置)
-with st.expander("⚙️ モバイル用クイックシステム設定・操作", expanded=False):
-    st.markdown("##### **現在の機器接続ステータス**")
-    m_col_info1, m_col_info2 = st.columns(2)
-    with m_col_info1:
-        st.write(f"📍 **位置情報**: {config.get('location', {}).get('name', 'Tokyo')}")
-        st.write(f"☀️ **太陽光定格**: {int(config.get('system', {}).get('pv_capacity_kw', 4))} kW")
-        st.write(f"🔋 **蓄電池容量**: {config.get('system', {}).get('battery_capacity_kwh', 11.1)} kWh")
-    with m_col_info2:
-        st.write(f"🔌 **ニチコンT5**: {nichicon_status}")
-        st.write(f"📡 **Bルート**: {broute_status}")
-        st.write(f"🌐 **HEMS Web (192.168.2.23)**: 🟢 ONLINE")
-    
-    st.divider()
-    st.markdown("##### **クイック操作ボタン**")
-    
-    m_btn_col1, m_btn_col2, m_btn_col3 = st.columns(3)
-    with m_btn_col1:
-        if st.button("📡 サブネットをスキャンして自動接続", key="mob_scan_btn", use_container_width=True):
-            with st.spinner("ローカルネットワーク(3610/TCP)を検索中..."):
-                device = auto_update_config_with_discovered_ip()
-                if device:
-                    st.success(f"機器を発見しました！\nIP: {device['ip']} ({device['type']})")
-                    st.rerun()
-                else:
-                    st.warning("ネットワーク上に ECHONET TCP 機器が見つかりませんでした。")
-    with m_btn_col2:
-        if st.button("🔄 翌日最適化の再計算実行", key="mob_recalc_btn", use_container_width=True):
-            optimizer = PostFitOptimizer()
-            optimizer.calculate_optimal_schedule()
-            st.success("再計算が完了しました！")
-            st.rerun()
-    with m_btn_col3:
-        if st.button("📥 直近14日間の歴史データを同期", key="mob_sync_btn", use_container_width=True):
-            with st.spinner("HEMS Web コントローラから直近14日分のログを取得中..."):
-                count = fetch_hems_past_days_history(days=14)
-                if count > 0:
-                    st.success(f"直近 {count} 日分のログを同期しました！")
-                    st.rerun()
-                else:
-                    st.warning("同期可能な新しいログはありませんでした。")
 
-    if st.button("⚡ 2016年〜全期間(約10年)一括抽出 (バックグラウンド)", key="mob_bulk_sync_btn", use_container_width=True):
-        if start_bulk_extraction_async(start_year=2016, end_year=2026):
-            st.success("バックグラウンド一括抽出を開始しました！画面上部に進捗が表示されます。")
-            st.rerun()
-        else:
-            st.warning("すでに一括抽出タスクが実行中です。")
 
 # バックグラウンド過去ログ一括抽出の進捗表示
 bulk_status = get_bulk_extraction_status()
@@ -331,31 +290,69 @@ def render_tab1_live():
     weather = WeatherService()
     warnings_info = weather.check_jma_warnings()
 
-    if warnings_info.get("has_warning", False):
+    # 適用スケジュールの動的判定
+    from datetime import datetime, timezone, timedelta
+    JST = timezone(timedelta(hours=9))
+    now_dt_live = datetime.now(JST)
+    now_hour_live = now_dt_live.hour
+    now_minute_live = now_dt_live.minute
+    
+    # 経済設定読み込み
+    try:
+        with open("config.yaml", "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f)
+    except Exception:
+        cfg = {}
+    fit_end_str_live = cfg.get("fit_setting", {}).get("fit_end_date", "2026-11-27")
+    try:
+        fit_end_date_live = datetime.strptime(fit_end_str_live, "%Y-%m-%d").date()
+    except Exception:
+        fit_end_date_live = datetime(2026, 11, 27).date()
+    is_fit_active_live = (now_dt_live.date() <= fit_end_date_live)
+    
+    # スケジュール説明文の構築
+    is_yorytoku_night_live = (now_hour_live >= 21 or now_hour_live < 7)
+    is_jit_live = (3 <= now_hour_live < 6) or (now_hour_live == 6 and now_minute_live <= 30)
+    
+    latest_sched_live = get_latest_schedule()
+    target_soc_val_live = 100
+    if latest_sched_live:
+        target_soc_val_live = int(round(latest_sched_live.get('target_night_soc', 100)))
+
+    if override_active:
+        sched_desc = f"⚠️ 一時手動制御中: {override_mode_str} ({override_time_left_str}) ➔ スケジュール一時保留中"
+        status_bg = "rgba(245, 158, 11, 0.12)"
+        status_border = "rgba(245, 158, 11, 0.35)"
+        status_color = "#f59e0b"
+    elif warnings_info.get("has_warning", False):
         alert_names = "・".join([w["name"] for w in warnings_info["warnings"]])
-        st.markdown(
-            f"""
-            <div class="glass-card" style="border-color: #ef4444; background: rgba(239, 68, 68, 0.12); margin-top: 5px; margin-bottom: 8px; padding: 8px 12px;">
-                <h6 style="color: #fca5a5; margin: 0 0 4px 0; font-weight:800; font-size:0.85rem; display: flex; align-items: center; gap: 8px;">
-                    ⚠️ Storm Watch (防災警報連動充電中)
-                </h6>
-                <p style="color: #fecdd3; margin: 0; font-size: 0.8rem; line-height: 1.4;">
-                    名古屋市熱田区に <strong>{alert_names}</strong> が発令されています。蓄電池を満充電(0x42)に保護維持しています。
-                </p>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        sched_desc = f"⚠️ Storm Watch警報発令中 ({alert_names}) ➔ 蓄電池満充電維持 (0x42)"
+        status_bg = "rgba(239, 68, 68, 0.12)"
+        status_border = "#ef4444"
+        status_color = "#fca5a5"
     else:
-        st.markdown(
-            """
-            <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.15); border-radius: 8px; padding: 5px 12px; margin-bottom: 8px; font-size:0.75rem; color:#34d399; font-weight:700; display:flex; justify-content:space-between; align-items:center;">
-                <span>🛡️ Storm Watch: 気象警報なし (通常AI自動運転)</span>
-                <span style="display:inline-block; width:6px; height:6px; background-color:#10b981; border-radius:50%; box-shadow:0 0 6px #10b981;"></span>
+        status_bg = "rgba(16, 185, 129, 0.08)"
+        status_border = "rgba(16, 185, 129, 0.15)"
+        status_color = "#34d399"
+        if is_yorytoku_night_live:
+            if is_jit_live:
+                sched_desc = f"⚡ 夜間JIT急速充電中 (夜とく: 16.3円 / 急速充電 0x42 / 目標: {target_soc_val_live}%) [03:00-06:30]"
+            else:
+                sched_desc = f"⏸️ 夜間待機中 (系統電力優先買電 / 蓄電池放電停止ガード 0x44) [21:00-07:00]"
+        else:
+            sched_desc = f"💰 昼間自動運転中 (太陽光自家消費/売電優先) [07:00-21:00]"
+
+    st.markdown(
+        f"""
+        <div style="background: {status_bg}; border: 1px solid {status_border}; border-radius: 8px; padding: 6px 12px; margin-bottom: 8px; font-size:0.78rem; color:{status_color}; font-weight:700;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span>🛡️ 運転ステータス: {sched_desc}</span>
+                <span style="display:inline-block; width:6px; height:6px; background-color:{'#f59e0b' if override_active else ('#ef4444' if warnings_info.get('has_warning', False) else '#10b981')}; border-radius:50%; box-shadow:0 0 6px {'#f59e0b' if override_active else ('#ef4444' if warnings_info.get('has_warning', False) else '#10b981')};"></span>
             </div>
-            """,
-            unsafe_allow_html=True
-        )
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
     latest_log = poll_and_log_all_data()
 
@@ -502,6 +499,7 @@ def render_tab1_live():
         chart_option = st.radio(
             "グラフ指標:",
             ["☀️ 太陽光発電 (W)", "⚡ 買電電力 (W)", "🔋 蓄電池 SOC (%) ＆ 充放電 (W)", "📊 全項目重ね合わせ比較"],
+            index=3,
             horizontal=True,
             key="live_chart_option",
             label_visibility="collapsed"
@@ -723,7 +721,7 @@ with tab2:
     col_sched, col_batt = st.columns([1.2, 1])
     
     with col_sched:
-        st.markdown("#### 🤖 翌日AI最適化予測 ＆ スケジュール予約")
+        st.markdown("#### 🤖 翌日AI最適化予測 ＆ 全自動スケジュール")
         if latest_sched:
             details = json.loads(latest_sched.get("details_json", "{}"))
             target_soc_val = int(round(latest_sched.get('target_night_soc', 100)))
@@ -731,31 +729,19 @@ with tab2:
             load_est_val = int(round(latest_sched.get('est_load_kwh', 0)))
             
             m_c1, m_c2, m_c3 = st.columns(3)
-            m_c1.metric("推奨 深夜充電目標", f"{target_soc_val} %", help="中部電力「夜とく」16.30円/kWh")
+            m_c1.metric("自動充電目標 (今夜)", f"{target_soc_val} %", help="中部電力「夜とく」16.30円/kWh時間帯に充電する目標値")
             m_c2.metric("翌日予想 発電量", f"{pv_est_val} kWh")
             m_c3.metric("翌日予想 消費量", f"{load_est_val} kWh")
             
-            if st.button("💰 中部電力「夜とく」最得スケジュールを予約送信 (昼間:31円売電 ➔ 深夜3:00-6:30 JIT充電)", use_container_width=True):
-                now_str = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
-                st.session_state["last_battery_cmd_status"] = {
-                    "sent": True,
-                    "sent_at": now_str,
-                    "target_soc": target_soc_val,
-                    "mode_name": f"昼間(31円売電0x43) ➔ 深夜03:00〜06:30 JIT自動急速充電 (0x42 100%)",
-                    "success": True
-                }
-                client.set_battery_mode(0x43)
-                st.success(f"✅ 昼間は【31円高額売電優先モード (0x43)】を設定し、深夜03:00〜06:30の寿命保護JIT充電を全自動予約しました！")
-                time.sleep(1.2)
-                st.rerun()
-                
-        if cmd_status and cmd_status.get("sent"):
             st.success(
-                f"✅ **予約完了 (`{cmd_status.get('sent_at')}`)**: "
-                f"昼間 `0x43 (31円売電)` ➔ 深夜 `03:00 JIT充電 (16.3円 100%)` 予約済"
+                f"🤖 **AI全自動制御が有効化されています**\n\n"
+                f"・**動作予定**: 深夜 JIT 充電帯 (03:00〜06:30) に、夜間最安電力を **{target_soc_val}%** まで自動的に充電し、"
+                f"それ以外の深夜オフピーク時間は放電を停止(系統優先)させます。昼間時間帯は自動で自家消費/売電運転に移行します。\n"
+                f"・**次回自動更新**: 本日 21:00 頃に翌日の最新天気予報を反映して再計算されます。"
             )
         else:
-            st.info("🟡 **未予約**: 上記の「最得スケジュールを予約送信」ボタンを押すとセットされます。")
+            st.info("🤖 AI自動スケジュール生成中... 本日夜に最適充電計画が反映されます。")
+
 
 with tab3:
     st.markdown("### 🛡️ バッテリー寿命診断 ＆ エネルギー自給自足分析")

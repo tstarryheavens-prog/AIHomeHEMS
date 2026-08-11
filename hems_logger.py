@@ -82,6 +82,24 @@ def check_and_apply_time_based_battery_schedule(client, config=None):
     target_mode = 0x45 # 初期デフォルト：自動/グリーン
 
     try:
+        # 0. 手動オーバーライド介入の判定
+        override_mode = None
+        override_label = ""
+        import json
+        import os
+        if os.path.exists("manual_override.json"):
+            try:
+                with open("manual_override.json", "r", encoding="utf-8") as f:
+                    ov_data = json.load(f)
+                expire_dt = datetime.fromisoformat(ov_data["expire_at"])
+                if now_dt < expire_dt:
+                    override_mode = ov_data["override_mode"]
+                    override_label = ov_data.get("label", "手動制御")
+                else:
+                    os.remove("manual_override.json") # 期限切れ
+            except Exception as ov_err:
+                print(f"[HEMSLogger] Error parsing manual override: {ov_err}")
+
         # 1. Storm Watch (気象警報連動防災モード) の判定
         from weather_service import WeatherService
         weather = WeatherService()
@@ -89,7 +107,11 @@ def check_and_apply_time_based_battery_schedule(client, config=None):
         
         has_storm_warning = warnings_info.get("has_warning", False)
         
-        if has_storm_warning:
+        if override_mode is not None:
+            # 手動オーバーライド優先
+            target_mode = override_mode
+            print(f"[HEMSLogger] Manual override active: {override_label} (target: {hex(target_mode)})")
+        elif has_storm_warning:
             # 警報発令中：強制満充電・バックアップ専用モード (0x42 / 急速充電)
             target_mode = 0x42
             print(f"[HEMSLogger] Storm Watch Active! Forcing CHARGE mode (0x42).")
@@ -134,9 +156,9 @@ def check_and_apply_time_based_battery_schedule(client, config=None):
                     target_mode = 0x45 # 卒FIT後昼間: 自家消費・グリーンモード
 
         # 🛑 昼間充電の完全禁止ガード (フェイルセーフの徹底)
-        # 昼間 (07:00〜23:00) 帯に、Storm Watch警報が出ていない通常状態の場合、
+        # 昼間 (07:00〜23:00) 帯に、Storm Watch警報が出ておらず手動介入でもない通常状態の場合、
         # 意図しないバグや狂ったAI計画により 0x42 (急速充電) に切り替わることを強制ロックアウトします。
-        if is_daytime and not has_storm_warning and target_mode == 0x42:
+        if is_daytime and not has_storm_warning and override_mode is None and target_mode == 0x42:
             print("[HEMSLogger] Warning: Prevented illegal DAYTIME charge (0x42) schedule! Fallback to AUTO/GREEN.")
             target_mode = 0x45 if not is_fit_active else 0x43
 
