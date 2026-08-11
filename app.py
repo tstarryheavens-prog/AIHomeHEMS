@@ -760,19 +760,19 @@ def render_tab1_live():
         overflow: hidden;
         margin: 0 14px;
     }}
-    .bar-fill {
+    .bar-fill {{
         height: 100%;
         background: linear-gradient(90deg, #3b82f6 0%, #60a5fa 100%);
         border-radius: 6px;
         transition: width 0.4s ease-in-out;
-    }
-    .room-val {
+    }}
+    .room-val {{
         width: 80px;
         text-align: right;
         font-weight: 800;
         font-size: 1.15rem;
         color: #38bdf8;
-    }
+    }}
     </style>
     </head>
     <body>
