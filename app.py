@@ -198,14 +198,16 @@ st.markdown(
     <style>
     /* 全体の背景とカラーテーマの調整 */
     .stApp {
-        background-color: #0b0f19;
-        color: #ffffff;
+        background: linear-gradient(135deg, #0b0f19 0%, #0f172a 50%, #1e1b4b 100%) !important;
+        color: #ffffff !important;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif !important;
     }
     
     /* Streamlitヘッダーの透過とボタン高可視性確保 */
     header[data-testid="stHeader"] {
-        background-color: rgba(11, 15, 25, 0.8) !important;
-        backdrop-filter: blur(8px) !important;
+        background-color: rgba(11, 15, 25, 0.85) !important;
+        backdrop-filter: blur(12px) !important;
+        -webkit-backdrop-filter: blur(12px) !important;
     }
     
     /* 📱 サイドバー開閉アイコンボタンの視認性・浮き彫り化 (暗闇で絶対に消えないデザイン) */
@@ -215,8 +217,8 @@ st.markdown(
         background-color: #1e293b !important;
         color: #ffffff !important;
         border: 2px solid #3b82f6 !important;
-        border-radius: 8px !important;
-        box-shadow: 0 0 12px rgba(59, 130, 246, 0.5) !important;
+        border-radius: 10px !important;
+        box-shadow: 0 0 15px rgba(59, 130, 246, 0.6) !important;
     }
     button[data-testid="stSidebarCollapseButton"]:hover,
     [data-testid="stSidebarHeader"] button:hover {
@@ -232,7 +234,8 @@ st.markdown(
 
     /* 📱 サイドバー全体の高コントラスト背景・文字色固定 */
     [data-testid="stSidebar"] {
-        background-color: #0f172a !important; /* 濃紺 */
+        background-color: rgba(15, 23, 42, 0.95) !important; /* 濃紺 */
+        backdrop-filter: blur(16px) !important;
         border-right: 1px solid rgba(59, 130, 246, 0.3) !important;
     }
     [data-testid="stSidebar"] * {
@@ -257,9 +260,12 @@ st.markdown(
     }
     [data-testid="stMetricValue"] {
         color: #ffffff !important;
+        font-weight: 900 !important;
+        font-size: 1.4rem !important;
     }
     [data-testid="stMetricLabel"] {
         color: #cbd5e1 !important;
+        font-weight: 700 !important;
     }
 
     /* 再実行時のフェード（グレーアウト）無効化 */
@@ -270,59 +276,81 @@ st.markdown(
     
     /* ガラスモルフィズム風のカスタムカードデザイン */
     .glass-card {
-        background: rgba(15, 23, 42, 0.65);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 16px;
-        padding: 20px;
-        margin-bottom: 20px;
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+        background: rgba(15, 23, 42, 0.75);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 18px;
+        padding: 18px;
+        margin-bottom: 16px;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.45);
     }
     
-    /* タブのスタイル調整 (横幅ぴったりレスポンシブ・スクロール不要) */
+    /* タブのスタイル調整 (スマホ横幅ぴったりレスポンシブ) */
     .stTabs [data-baseweb="tab-list"] {
         display: flex !important;
         width: 100% !important;
-        gap: 4px !important;
-        background-color: rgba(15, 23, 42, 0.7);
-        padding: 4px;
-        border-radius: 12px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        gap: 6px !important;
+        background: rgba(15, 23, 42, 0.8);
+        backdrop-filter: blur(10px);
+        padding: 6px;
+        border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.15);
     }
     .stTabs [data-baseweb="tab"] {
         flex: 1 1 0% !important;
         justify-content: center !important;
-        height: 40px !important;
+        height: 44px !important;
         white-space: nowrap !important;
         background-color: transparent;
-        border-radius: 8px;
-        color: #cbd5e1 !important;
-        font-weight: 700;
-        font-size: 0.85rem !important;
+        border-radius: 10px;
+        color: #94a3b8 !important;
+        font-weight: 800;
+        font-size: 0.9rem !important;
         border: none;
         padding: 0 4px !important;
+        transition: all 0.2s ease-in-out;
     }
     .stTabs [aria-selected="true"] {
-        background-color: #2563eb !important;
+        background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%) !important;
         color: #ffffff !important;
-        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
+        box-shadow: 0 4px 14px rgba(37, 99, 235, 0.5);
+    }
+
+    /* 📱 モバイル端末向けレイアウト調整 */
+    @media (max-width: 640px) {
+        .glass-card {
+            padding: 12px;
+            border-radius: 14px;
+        }
+        .stTabs [data-baseweb="tab"] {
+            font-size: 0.8rem !important;
+            height: 38px !important;
+        }
+        [data-testid="stMetricValue"] {
+            font-size: 1.15rem !important;
+        }
+        [data-testid="column"] {
+            margin-bottom: 8px !important;
+        }
     }
     
     /* 📱 ボタンの高コントラスト・はっきり視認できるスタイル */
     div.stButton > button, [data-testid="stSidebar"] button {
-        background-color: #1e293b !important;
+        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%) !important;
         color: #ffffff !important;
         border: 2px solid #3b82f6 !important;
-        border-radius: 8px !important;
+        border-radius: 10px !important;
         font-weight: 800 !important;
         font-size: 0.95rem !important;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+        transition: all 0.2s ease-in-out !important;
     }
     div.stButton > button:hover, [data-testid="stSidebar"] button:hover {
-        background-color: #2563eb !important;
+        background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
         color: #ffffff !important;
-        box-shadow: 0 0 12px rgba(37, 99, 235, 0.8) !important;
+        box-shadow: 0 0 16px rgba(37, 99, 235, 0.8) !important;
+        transform: translateY(-1px);
     }
     </style>
     """,
@@ -445,66 +473,71 @@ def render_tab1_live():
     <!DOCTYPE html>
     <html>
     <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <style>
     body {{
         margin: 0;
         padding: 0;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
         background-color: transparent;
         color: #ffffff;
+        user-select: none;
     }}
     .hems-container {{
-        background: rgba(15, 23, 42, 0.7);
-        border: 1px solid #1e293b;
-        border-radius: 12px;
-        padding: 8px 12px;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-        max-height: 240px;
+        background: linear-gradient(135deg, rgba(15, 23, 42, 0.9) 0%, rgba(30, 41, 59, 0.8) 100%);
+        border: 1px solid rgba(59, 130, 246, 0.3);
+        border-radius: 16px;
+        padding: 12px 14px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1);
+        max-height: 250px;
         overflow: hidden;
     }}
     .hems-header {{
         display: flex;
         justify-content: space-between;
-        font-size: 0.75rem;
+        align-items: center;
+        font-size: 0.78rem;
         color: #94a3b8;
-        border-bottom: 1px solid #1e293b;
-        padding-bottom: 4px;
-        margin-bottom: 8px;
-        font-weight: 600;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        padding-bottom: 6px;
+        margin-bottom: 10px;
+        font-weight: 700;
     }}
     .flow-grid {{
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 8px;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
     }}
     .flow-card {{
-        background: rgba(30, 41, 59, 0.85);
-        border: 1px solid #475569;
-        border-radius: 10px;
-        padding: 6px 10px;
+        background: rgba(30, 41, 59, 0.7);
+        backdrop-filter: blur(10px);
+        border: 1.5px solid #475569;
+        border-radius: 12px;
+        padding: 8px 10px;
         text-align: center;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        transition: transform 0.2s ease;
     }}
-    .pv-card {{ border-color: #f59e0b; box-shadow: 0 0 10px rgba(245, 158, 11, 0.2); grid-column: 2; }}
-    .grid-card {{ border-color: {'#ef4444' if grid_w_int > 0 else '#10b981'}; box-shadow: 0 0 10px {'rgba(239, 68, 68, 0.2)' if grid_w_int > 0 else 'rgba(16, 185, 129, 0.2)'}; grid-column: 1; grid-row: 2; }}
-    .house-card {{ border-color: #60a5fa; background: rgba(30, 58, 138, 0.4); box-shadow: 0 0 15px rgba(96, 165, 250, 0.3); grid-column: 2; grid-row: 2; }}
-    .bat-card {{ border-color: #38bdf8; box-shadow: 0 0 10px rgba(56, 189, 248, 0.2); grid-column: 3; grid-row: 2; }}
+    .pv-card {{ border-color: #f59e0b; background: rgba(245, 158, 11, 0.1); box-shadow: 0 0 12px rgba(245, 158, 11, 0.25); }}
+    .grid-card {{ border-color: {'#ef4444' if grid_w_int > 0 else '#10b981'}; background: {'rgba(239, 68, 68, 0.1)' if grid_w_int > 0 else 'rgba(16, 185, 129, 0.1)'}; box-shadow: 0 0 12px {'rgba(239, 68, 68, 0.25)' if grid_w_int > 0 else 'rgba(16, 185, 129, 0.25)'}; }}
+    .house-card {{ border-color: #60a5fa; background: rgba(59, 130, 246, 0.12); box-shadow: 0 0 14px rgba(96, 165, 250, 0.3); }}
+    .bat-card {{ border-color: #38bdf8; background: rgba(56, 189, 248, 0.1); box-shadow: 0 0 12px rgba(56, 189, 248, 0.25); }}
 
-    .card-title {{ font-size: 0.72rem; font-weight: 700; color: #cbd5e1; margin-bottom: 2px; }}
-    .card-val {{ font-size: 1.15rem; font-weight: 900; margin: 1px 0; }}
-    .card-sub {{ font-size: 0.68rem; font-weight: 600; color: #94a3b8; }}
+    .card-title {{ font-size: 0.74rem; font-weight: 800; color: #cbd5e1; margin-bottom: 4px; white-space: nowrap; }}
+    .card-val {{ font-size: 1.25rem; font-weight: 900; margin: 2px 0; letter-spacing: -0.5px; }}
+    .card-sub {{ font-size: 0.68rem; font-weight: 700; color: #94a3b8; white-space: nowrap; }}
 
     @media (max-width: 600px) {{
-        .hems-container {{ padding: 6px 8px; border-radius: 10px; max-height: 220px; }}
+        .hems-container {{ padding: 8px 10px; border-radius: 12px; max-height: 230px; }}
         .hems-header {{ font-size: 0.7rem; margin-bottom: 6px; }}
-        .flow-grid {{ grid-template-columns: 1fr 1fr; gap: 6px; }}
+        .flow-grid {{ grid-template-columns: repeat(2, 1fr); gap: 6px; }}
         .pv-card {{ grid-column: 1; grid-row: 1; }}
         .house-card {{ grid-column: 2; grid-row: 1; }}
         .bat-card {{ grid-column: 1; grid-row: 2; }}
         .grid-card {{ grid-column: 2; grid-row: 2; }}
-        .flow-card {{ padding: 4px 6px; border-radius: 8px; }}
-        .card-title {{ font-size: 0.65rem; }}
-        .card-val {{ font-size: 1.05rem; }}
+        .flow-card {{ padding: 6px 8px; border-radius: 10px; }}
+        .card-title {{ font-size: 0.68rem; }}
+        .card-val {{ font-size: 1.1rem; }}
         .card-sub {{ font-size: 0.62rem; }}
     }}
     </style>
@@ -513,34 +546,33 @@ def render_tab1_live():
 
     <div class="hems-container">
         <div class="hems-header">
-            <div>🏠 <strong>スマートホーム HEMS コントローラ</strong></div>
-            <div>⏱️ {latest_log.get('timestamp', '')}</div>
+            <div>⚡ <strong>LIVE POWER FLOW (リアルタイム電力フロー)</strong></div>
+            <div style="font-size:0.7rem; background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:4px;">⏱️ {latest_log.get('timestamp', '')}</div>
         </div>
         
         <div class="flow-grid">
             <div class="flow-card pv-card">
-                <div class="card-title">☀️ 太陽光発電システム</div>
-                <div class="card-val" style="color: #fbbf24;">{pv_kw} <span style="font-size:0.8rem;">kW</span></div>
-                <div class="card-sub">({pv_w_int:,} W) | 累積: {cum_pv_int:,} kWh</div>
-            </div>
-
-            <div class="flow-card grid-card">
-                <div class="card-title">⚡ 電力会社 (送電線)</div>
-                <div class="card-val" style="color: {'#ef4444' if grid_w_int > 0 else '#10b981'};">{grid_kw} <span style="font-size:0.8rem;">kW</span></div>
-                <div class="card-sub">{'🔴 買電中' if grid_w_int > 0 else ('🟢 売電中' if grid_w_int < 0 else '⚡ 系統平衡')} ({grid_w_int:,} W)</div>
-            </div>
-
-            <div class="flow-card house-card">
-                <div style="font-size:1.1rem; margin-bottom: 1px;">🏡</div>
-                <div class="card-title" style="color:#93c5fd;">消費 (家庭負荷)</div>
-                <div class="card-val" style="color: #60a5fa;">{house_kw} <span style="font-size:0.8rem;">kW</span></div>
-                <div class="card-sub">({house_w_int:,} W)</div>
+                <div class="card-title" style="color:#fbbf24;">☀️ 太陽光発電</div>
+                <div class="card-val" style="color: #fbbf24;">{pv_kw} <span style="font-size:0.75rem;">kW</span></div>
+                <div class="card-sub">({pv_w_int:,} W) | 累計: {cum_pv_int:,} kWh</div>
             </div>
 
             <div class="flow-card bat-card">
-                <div class="card-title">🔋 蓄電池 (ニチコンT5)</div>
-                <div class="card-val" style="color: #38bdf8;">{soc_int} <span style="font-size:0.8rem;">%</span> ({battery_kw} kW)</div>
-                <div class="card-sub">{'⚡ 充電中' if battery_w_int > 50 else ('🔋 放電中' if battery_w_int < -50 else '⏸️ 待機中')} ({battery_w_int:,} W)</div>
+                <div class="card-title" style="color:#38bdf8;">🔋 蓄電池 (ニチコン)</div>
+                <div class="card-val" style="color: #38bdf8;">{soc_int} <span style="font-size:0.75rem;">%</span></div>
+                <div class="card-sub">{'⚡ 充電' if battery_w_int > 50 else ('🔋 放電' if battery_w_int < -50 else '⏸️ 待機')} ({battery_w_int:,} W)</div>
+            </div>
+
+            <div class="flow-card house-card">
+                <div class="card-title" style="color:#93c5fd;">🏡 宅内消費 (負荷)</div>
+                <div class="card-val" style="color: #60a5fa;">{house_kw} <span style="font-size:0.75rem;">kW</span></div>
+                <div class="card-sub">({house_w_int:,} W)</div>
+            </div>
+
+            <div class="flow-card grid-card">
+                <div class="card-title" style="color:{'#f87171' if grid_w_int > 0 else '#34d399'};">⚡ 電力会社 (系統)</div>
+                <div class="card-val" style="color: {'#ef4444' if grid_w_int > 0 else '#10b981'};">{grid_kw} <span style="font-size:0.75rem;">kW</span></div>
+                <div class="card-sub">{'🔴 買電中' if grid_w_int > 0 else ('🟢 売電中' if grid_w_int < 0 else '⚡ 系統平衡')} ({grid_w_int:,} W)</div>
             </div>
         </div>
     </div>
