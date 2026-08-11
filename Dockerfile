@@ -1,22 +1,27 @@
-FROM python:3.10-slim
+FROM python:3.11-slim
 
-# システムのタイムゾーンを日本時間(JST)に設定
+# 日本時間(JST)のタイムゾーン設定およびビルド依存パッケージのインストール
 ENV TZ=Asia/Tokyo
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tzdata \
+    curl \
+    && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# 依存関係をキャッシュするために requirements.txt を先にコピーしてインストール
+# 依存ライブラリのインストール
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# アプリケーションソースをコピー
-COPY . .
+# アプリケーションソースコードのコピー
+COPY . /app
 
-# 起動スクリプトに実行権限を付与
+# スクリプトの実行権限確認
 RUN chmod +x /app/entrypoint.sh
 
-# Streamlitのデフォルトポート
+# Streamlit ポート露出
 EXPOSE 8501
 
-ENTRYPOINT ["/app/entrypoint.sh"]
+# コンテナ起動エントリーポイント
+ENTRYPOINT ["/bin/bash", "/app/entrypoint.sh"]

@@ -1,18 +1,18 @@
 #!/bin/bash
+set -e
 
 echo "========================================================"
-echo "⚡ Checking and installing python dependencies..."
-pip install --no-cache-dir -r requirements.txt
+echo " ⚡ Starting AI SMART ENERGY CONTROLLER Container"
+echo "========================================================"
 
-echo "⚡ Initializing database..."
+# 1. データベースの初期化
+echo "📦 Initializing Database..."
 python3 -c "import database; database.init_db()"
 
-# バックグラウンドスケジューラを起動
-echo "⚡ Starting HEMS background scheduler..."
-python3 -u scheduler.py &
+# 2. バックグラウンドデータ収集＆最適化スケジューラの起動
+echo "🚀 Starting Background Scheduler..."
+python3 scheduler.py &
 
-
-# Streamlit を起動 (0.0.0.0でバインドして外部アクセスを許可)
-echo "⚡ Starting Streamlit UI on port 8501..."
-python3 -m streamlit run app.py --server.port=8501 --server.address=0.0.0.0
-
+# 3. Streamlit Web UI の起動 (フォアグラウンド)
+echo "🌐 Starting Streamlit UI on port 8501..."
+exec streamlit run app.py --server.port=8501 --server.address=0.0.0.0

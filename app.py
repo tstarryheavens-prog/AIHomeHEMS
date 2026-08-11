@@ -201,13 +201,42 @@ st.markdown(
         color: #e2e8f0;
     }
     
-    /* Streamlitのデフォルトヘッダー（白い帯）を完全に非表示にし、モバイルでの白飛びを完全防止 */
-    header[data-testid="stHeader"], .stAppHeader {
-        display: none !important;
-        background-color: transparent !important;
+    /* Streamlitのデフォルトヘッダーの白い帯のみ透明化（ボタンなどのUI要素は透過表示で維持） */
+    header[data-testid="stHeader"], .stAppHeader, [data-testid="stHeader"] {
         background: transparent !important;
+        background-color: transparent !important;
+        color: #ffffff !important;
     }
     
+    /* 📱 画面サイズ問わず、サイドバー開閉ボタンを左上に常時・目立つように固定配置 */
+    button[data-testid="stSidebarCollapseButton"],
+    [data-testid="stSidebarHeader"] button,
+    [data-testid="stHeader"] button[aria-label*="sidebar"],
+    [data-testid="stHeader"] button[aria-label*="Sidebar"] {
+        display: flex !important;
+        visibility: visible !important;
+        position: fixed !important;
+        top: 10px !important;
+        left: 12px !important;
+        z-index: 9999999 !important;
+        background-color: #1e293b !important; /* 濃い紺色で背景から浮き出させる */
+        color: #ffffff !important;
+        border-radius: 10px !important;
+        width: 42px !important;
+        height: 42px !important;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5) !important;
+        align-items: center !important;
+        justify-content: center !important;
+        border: 2px solid #3b82f6 !important; /* 目立つ青色枠線 */
+        cursor: pointer !important;
+    }
+    button[data-testid="stSidebarCollapseButton"]:hover,
+    [data-testid="stSidebarHeader"] button:hover {
+        background-color: #3b82f6 !important;
+        color: #ffffff !important;
+        box-shadow: 0 0 15px rgba(59, 130, 246, 0.8) !important;
+    }
+
     /* 📱 モバイル文字視認性徹底強化 */
     .stMarkdown, .stText, p, span, div, label, li {
         color: #f8fafc !important; /* ほぼ完全な白に近いグレーで文字潰れを防止 */
@@ -227,38 +256,11 @@ st.markdown(
         border-right: 1px solid rgba(255, 255, 255, 0.08);
     }
     
-    /* 📱 モバイル表示時のみ、サイドバー開閉ボタンを目立たせる ＆ 位置調整 */
-    @media (max-width: 768px) {
-        button[data-testid="stSidebarCollapseButton"] {
-            background-color: #1e293b !important; /* 濃い背景で白背景でも確実に見える */
-            color: #ffffff !important;
-            border-radius: 8px !important;
-            width: 40px !important;
-            height: 40px !important;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4) !important;
-            position: absolute !important;
-            top: 20px !important;
-            left: 12px !important;
-            z-index: 999999 !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            border: 2px solid #3b82f6 !important; /* 青い枠線でアピール */
-        }
-        button[data-testid="stSidebarCollapseButton"]::after {
-            content: "⚙️" !important;
-            font-size: 1.15rem !important;
-            color: #ffffff !important;
-            position: absolute !important;
-        }
-        button[data-testid="stSidebarCollapseButton"] svg {
-            display: none !important; /* 標準の矢印を非表示 */
-        }
-        /* 最上部のカードにトグルボタン用の左マージン（余白）を開ける */
-        .glass-card:first-of-type {
-            padding-left: 64px !important;
-            position: relative !important;
-        }
+    /* 最上部のカードにトグルボタン用の左マージン（余白）を開ける */
+    .glass-card:first-of-type {
+        margin-top: 10px !important;
+        padding-left: 60px !important;
+        position: relative !important;
     }
 
 
