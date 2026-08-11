@@ -1,0 +1,17 @@
+services:
+  ai-hems-controller:
+    build: .
+    container_name: ai-hems-controller
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - TZ=Asia/Tokyo
+    volumes:
+      - ./hems.db:/app/hems.db
+      - ./config.yaml:/app/config.yaml
+      - ./hems_full_telemetry_log.csv:/app/hems_full_telemetry_log.csv
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8501/_stcore/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
