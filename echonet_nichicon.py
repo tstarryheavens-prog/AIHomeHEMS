@@ -44,9 +44,10 @@ class NichiconEchonetClient:
     def _query(self, deoj, epc):
         ports_to_try = [self.port, 3610, 1369]
         for p in dict.fromkeys(ports_to_try):
+            # 1. Try TCP Connection
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(1.5)
+                sock.settimeout(2.5)
                 sock.connect((self.ip_address, p))
                 frame = self._build_frame(CLASS_CONTROLLER, deoj, ESV_GET_REQ, epc)
                 sock.sendall(frame)
@@ -57,6 +58,21 @@ class NichiconEchonetClient:
                     return data[14:14+pdc]
             except Exception:
                 pass
+
+            # 2. Try UDP Broadcast/Unicast (Standard ECHONET Lite Port 3610)
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                sock.settimeout(2.0)
+                frame = self._build_frame(CLASS_CONTROLLER, deoj, ESV_GET_REQ, epc)
+                sock.sendto(frame, (self.ip_address, p))
+                data, _ = sock.recvfrom(1024)
+                sock.close()
+                if len(data) >= 14 and data[10] in (0x72, 0x52):
+                    pdc = data[13]
+                    return data[14:14+pdc]
+            except Exception:
+                pass
+
         return None
 
     def get_full_system_info(self):
