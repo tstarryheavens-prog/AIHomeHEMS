@@ -9,7 +9,7 @@ JST = timezone(timedelta(hours=9))
 
 def fetch_hems_past_days_history(days=30):
     """
-    HEMS Webコントローラ(192.168.2.23)から過去N日間の電気代・自給率・消費電力量の歴史ログを自動収集しDB保存する
+    HEMS Webコントローラ(192.168.2.23)から過去N日間の電気代・自給率・消費電力量の履歴ログを自動収集しDB保存する
     """
     try:
         with open("config.yaml", "r", encoding="utf-8") as f:

@@ -51,7 +51,7 @@ if os.path.exists("manual_override.json"):
     except Exception:
         pass
 
-st.sidebar.title("⚡ SMART ENERGY OS")
+st.sidebar.title("⚡ AI HEMS OS v2.3")
 try:
     with open("config.yaml", "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
@@ -109,43 +109,76 @@ st.sidebar.divider()
 
 # 3. 過去データ同期・抽出ボタン
 st.sidebar.markdown("**📥 過去データの同期・抽出操作**")
-if st.sidebar.button("📥 直近14日間の歴史データを同期", use_container_width=True):
-    with st.sidebar.spinner("HEMS Web コントローラから直近14日分のログを取得中..."):
+if st.sidebar.button("📥 直近14日間の履歴データを同期", use_container_width=True):
+    with st.sidebar.spinner("HEMS Web コントローラから直近14日分の履歴ログを取得中..."):
         count = fetch_hems_past_days_history(days=14)
         if count > 0:
-            st.sidebar.success(f"直近 {count} 日分のログを同期しました！")
+            st.sidebar.success(f"直近 {count} 日分の履歴ログを同期しました！")
             time.sleep(0.8)
             st.rerun()
         else:
-            st.sidebar.info("同期対象の新しいログはありません。")
+            st.sidebar.info("同期対象の新しい履歴ログはありません。")
 
-if st.sidebar.button("⚡ 2016年〜全期間(約10年)一括抽出", use_container_width=True):
+if st.sidebar.button("⚡ 2016年〜全期間(約10年)履歴一括抽出", use_container_width=True):
     if start_bulk_extraction_async(start_year=2016, end_year=2026):
-        st.sidebar.success("バックグラウンド一括抽出を開始しました！画面上部に進捗が表示されます。")
+        st.sidebar.success("バックグラウンド履歴一括抽出を開始しました！画面上部に進捗が表示されます。")
         time.sleep(0.8)
         st.rerun()
     else:
-        st.sidebar.warning("すでに一括抽出タスクが実行中です。")
+        st.sidebar.warning("すでに履歴一括抽出タスクが実行中です。")
 
 
 
 # ==========================================
-# 🖥️ メインコンテンツ表示
+# 🖥️ メインコンテンツ表示 (最上部に計画根拠バナーを配置)
 # ==========================================
+latest_sched = get_latest_schedule()
+target_soc_val = 100
+pv_est_val = 0
+load_est_val = 0
+reason_desc = "AI自動スケジュールが計算した最適値が適用されています。"
+
+if latest_sched:
+    target_soc_val = int(round(latest_sched.get('target_night_soc', 100)))
+    pv_est_val = int(round(latest_sched.get('est_pv_kwh', 0)))
+    load_est_val = int(round(latest_sched.get('est_load_kwh', 0)))
+    
+    if pv_est_val > 15:
+        reason_desc = f"☀️ 翌日の予想発電量（{pv_est_val}kWh）が十分に大きいため、深夜充電を {target_soc_val}% に抑え、太陽光の余剰電力を充電する空き枠を確保します。"
+    elif pv_est_val < 5:
+        reason_desc = f"☁️ 翌日の予想発電量（{pv_est_val}kWh）が極めて少なく日中に不足するため、深夜の最安電力（16.3円）で {target_soc_val}% まで満タンに充電して備えます。"
+    else:
+        reason_desc = f"⛅ 翌日予想発電（{pv_est_val}kWh）と消費予測（{load_est_val}kWh）のバランスから、最も経済効果が高くなる深夜充電目標 {target_soc_val}% を算定しました。"
+
 st.markdown(
-    """
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:-20px; margin-bottom:10px;">
-        <div>
-            <h3 style="margin: 0; padding: 0; font-size: 1.35rem; font-weight:800; color:#f1f5f9;">⚡ AI SMART HEMS</h3>
-            <p style="margin: 0; padding: 0; font-size: 0.75rem; color:#94a3b8;">Bルート × ニチコンT5 × HEMS Web × AI最適化</p>
+    f"""
+    <div class="glass-card" style="padding: 10px 14px; margin-bottom: 12px; border-color: rgba(59, 130, 246, 0.25); background: rgba(30, 41, 59, 0.5); margin-top: -20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span style="color:#60a5fa; font-weight:800; font-size:0.85rem;">🤖 AI最適化スケジュール・計画根拠</span>
+            <span style="font-size:0.75rem; background:rgba(59, 130, 246, 0.15); padding:2px 6px; border-radius:4px; color:#60a5fa; font-weight:700;">v2.3 OS</span>
         </div>
-        <div style="text-align:right;">
-            <span style="font-size:0.75rem; background:rgba(59, 130, 246, 0.15); border:1px solid rgba(59, 130, 246, 0.3); padding:3px 8px; border-radius:6px; color:#60a5fa; font-weight:700;">v2.2 OS</span>
+        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px; margin-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:6px; text-align:center;">
+            <div>
+                <div style="font-size:0.65rem; color:#cbd5e1;">今夜の目標SOC</div>
+                <div style="font-size:1.15rem; font-weight:800; color:#34d399;">{target_soc_val} %</div>
+            </div>
+            <div>
+                <div style="font-size:0.65rem; color:#cbd5e1;">翌日予想発電</div>
+                <div style="font-size:1.15rem; font-weight:800; color:#fbbf24;">{pv_est_val} kWh</div>
+            </div>
+            <div>
+                <div style="font-size:0.65rem; color:#cbd5e1;">翌日予想消費</div>
+                <div style="font-size:1.15rem; font-weight:800; color:#60a5fa;">{load_est_val} kWh</div>
+            </div>
+        </div>
+        <div style="font-size:0.75rem; color:#ffffff; line-height:1.45; font-weight:600;">
+            📝 <strong>算定根拠</strong>: {reason_desc}
         </div>
     </div>
     """,
     unsafe_allow_html=True
 )
+
 
 # ガラスモルフィズム ＆ チラつき防止カスタムCSS of 挿入
 st.markdown(
@@ -176,33 +209,40 @@ st.markdown(
         border-right: 1px solid rgba(255, 255, 255, 0.08);
     }
     
-    /* 📱 モバイル表示時のみ、サイドバー開閉ボタンを目立たせる */
+    /* 📱 モバイル表示時のみ、サイドバー開閉ボタンを目立たせる ＆ 位置調整 */
     @media (max-width: 768px) {
         button[data-testid="stSidebarCollapseButton"] {
-            background-color: #3b82f6 !important;
+            background-color: #1e293b !important; /* 濃い背景で白背景でも確実に見える */
             color: #ffffff !important;
-            border-radius: 50% !important;
-            width: 44px !important;
-            height: 44px !important;
-            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.5) !important;
-            position: fixed !important;
-            top: 10px !important;
-            left: 10px !important;
+            border-radius: 8px !important;
+            width: 40px !important;
+            height: 40px !important;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4) !important;
+            position: absolute !important;
+            top: 20px !important;
+            left: 12px !important;
             z-index: 999999 !important;
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
-            border: 1px solid rgba(255, 255, 255, 0.25) !important;
+            border: 2px solid #3b82f6 !important; /* 青い枠線でアピール */
         }
         button[data-testid="stSidebarCollapseButton"]::after {
             content: "⚙️" !important;
-            font-size: 1.05rem !important;
+            font-size: 1.15rem !important;
+            color: #ffffff !important;
             position: absolute !important;
         }
         button[data-testid="stSidebarCollapseButton"] svg {
-            display: none !important; /* 標準の矢印アイコンを消して設定ギアを優先 */
+            display: none !important; /* 標準の矢印を非表示 */
+        }
+        /* 最上部のカードにトグルボタン用の左マージン（余白）を開ける */
+        .glass-card:first-of-type {
+            padding-left: 64px !important;
+            position: relative !important;
         }
     }
+
 
     
     /* Streamlitの再実行時のフェード（グレーアウト）を完全に無効化 */
@@ -297,7 +337,7 @@ st.markdown(
 # バックグラウンド過去ログ一括抽出の進捗表示
 bulk_status = get_bulk_extraction_status()
 if bulk_status["is_running"]:
-    st.warning("⚡ **バックグラウンドにて2016年からの全期間(約10年分)歴史ログを一括抽出・同期中...**")
+    st.warning("⚡ **バックグラウンドにて2016年からの全期間(約10年分)履歴ログを一括抽出・同期中...**")
     progress_val = float(bulk_status["progress_percent"]) / 100.0
     st.progress(min(1.0, max(0.0, progress_val)))
     st.info(
@@ -306,7 +346,8 @@ if bulk_status["is_running"]:
         f"**取得レコード数**: {bulk_status['extracted_records']} 件"
     )
 elif bulk_status["processed_days"] > 0 and bulk_status["processed_days"] == bulk_status["total_days"]:
-    st.success(f"✅ 2016年からの全期間 ({bulk_status['extracted_records']}日分) の歴史ログの一括抽出・DB保存が完了しました！")
+    st.success(f"✅ 2016年からの全期間 ({bulk_status['extracted_records']}日分) の履歴ログの一括抽出・DB保存が完了しました！")
+
 
 # 🗂️ 3タブレイアウトの構築
 tab1, tab2, tab3 = st.tabs(["🎛️ ライブモニター", "🤖 AI制御・スケジュール", "🛡️ 寿命診断 ＆ 自給率分析"])
@@ -583,31 +624,71 @@ def render_tab1_live():
                     "battery_w": "蓄電池充放電 (W)",
                     "battery_soc": "蓄電池 SOC (%)"
                 }
-                df_plot_renamed = df_reset.rename(columns=rename_dict)
-                plot_cols = [rename_dict[c] for c in y_cols if c in rename_dict]
-                df_melt = df_plot_renamed.melt("timestamp", value_vars=plot_cols, var_name="指標", value_name="値")
+                
+                # モバイル文字色用 (明るい色)
+                text_color = '#e2e8f0'
+                grid_color = 'rgba(255,255,255,0.06)'
                 
                 color_scale = alt.Scale(
-                    domain=["太陽光発電 (W)", "買電/売/売電 (W)", "蓄電池充放電 (W)", "蓄電池 SOC (%)"],
-                    range=["#fbbf24", "#f87171", "#38bdf8", "#34d399"]
+                    domain=["太陽光発電 (W)", "買電/売電 (W)", "蓄電池充放電 (W)", "蓄電池 SOC (%)"],
+                    range=["#fbbf24", "#f87171", "#38bdf8", "#10b981"]
                 )
                 
-                chart = alt.Chart(df_melt).mark_line(interpolate='monotone', strokeWidth=1.5).encode(
-                    x=alt.X('timestamp:T', title=None, axis=alt.Axis(format='%m/%d %H:%M', grid=True, gridColor='rgba(255,255,255,0.06)', labelColor='#94a3b8')),
-                    y=alt.Y('値:Q', title=None, axis=alt.Axis(grid=True, gridColor='rgba(255,255,255,0.06)', labelColor='#94a3b8')),
-                    color=alt.Color('指標:N', scale=color_scale, legend=alt.Legend(title=None, labelColor='#f1f5f9', direction='horizontal', orient='bottom')),
-                    tooltip=[
-                        alt.Tooltip('timestamp:T', title='時刻', format='%m/%d %H:%M'),
-                        alt.Tooltip('指標:N', title='項目'),
-                        alt.Tooltip('値:Q', title='値')
-                    ]
-                ).properties(
-                    height=180 # 高さを180pxに抑え、スマホ画面にコンパクトに配置
-                ).configure_view(
-                    strokeOpacity=0
-                ).configure(
-                    background='transparent'
-                )
+                # もしSOCと電力が混在している（全項目重ね合わせ）場合、左右2軸に分離する
+                if "battery_soc" in y_cols and len(y_cols) > 1:
+                    power_vars = [c for c in ["pv_w", "grid_w", "battery_w"] if c in y_cols]
+                    plot_power_cols = [rename_dict[c] for c in power_vars]
+                    
+                    df_plot_renamed = df_reset.rename(columns=rename_dict)
+                    
+                    # 1. 電力用 (左軸 - W)
+                    df_melt_pow = df_plot_renamed.melt("timestamp", value_vars=plot_power_cols, var_name="指標", value_name="電力")
+                    power_chart = alt.Chart(df_melt_pow).mark_line(interpolate='monotone', strokeWidth=1.5).encode(
+                        x=alt.X('timestamp:T', title=None, axis=alt.Axis(format='%m/%d %H:%M', grid=True, gridColor=grid_color, labelColor=text_color)),
+                        y=alt.Y('電力:Q', title='電力 (W)', axis=alt.Axis(grid=True, gridColor=grid_color, labelColor=text_color, titleColor=text_color)),
+                        color=alt.Color('指標:N', scale=color_scale, legend=alt.Legend(title=None, labelColor=text_color, direction='horizontal', orient='bottom'))
+                    )
+                    
+                    # 2. SOC用 (右軸 - %)
+                    df_melt_soc = df_plot_renamed.melt("timestamp", value_vars=["蓄電池 SOC (%)"], var_name="指標", value_name="残量")
+                    soc_chart = alt.Chart(df_melt_soc).mark_line(interpolate='monotone', strokeWidth=2.2, strokeDash=[4, 3]).encode(
+                        x=alt.X('timestamp:T'),
+                        y=alt.Y('残量:Q', title='残量 (%)', scale=alt.Scale(domain=[0, 100]), axis=alt.Axis(grid=False, labelColor='#10b981', titleColor='#10b981')),
+                        color=alt.Color('指標:N', scale=color_scale, legend=alt.Legend(title=None, labelColor=text_color, direction='horizontal', orient='bottom'))
+                    )
+                    
+                    chart = alt.layer(power_chart, soc_chart).resolve_scale(
+                        y='independent'
+                    ).properties(
+                        height=180
+                    ).configure_view(
+                        strokeOpacity=0
+                    ).configure(
+                        background='transparent'
+                    )
+                else:
+                    # 通常の1軸グラフ
+                    plot_cols = [rename_dict[c] for c in y_cols if c in rename_dict]
+                    df_plot_renamed = df_reset.rename(columns=rename_dict)
+                    df_melt = df_plot_renamed.melt("timestamp", value_vars=plot_cols, var_name="指標", value_name="値")
+                    
+                    chart = alt.Chart(df_melt).mark_line(interpolate='monotone', strokeWidth=1.5).encode(
+                        x=alt.X('timestamp:T', title=None, axis=alt.Axis(format='%m/%d %H:%M', grid=True, gridColor=grid_color, labelColor=text_color)),
+                        y=alt.Y('値:Q', title=y_label, axis=alt.Axis(grid=True, gridColor=grid_color, labelColor=text_color, titleColor=text_color)),
+                        color=alt.Color('指標:N', scale=color_scale, legend=alt.Legend(title=None, labelColor=text_color, direction='horizontal', orient='bottom')),
+                        tooltip=[
+                            alt.Tooltip('timestamp:T', title='時刻', format='%m/%d %H:%M'),
+                            alt.Tooltip('指標:N', title='項目'),
+                            alt.Tooltip('値:Q', title='値')
+                        ]
+                    ).properties(
+                        height=180
+                    ).configure_view(
+                        strokeOpacity=0
+                    ).configure(
+                        background='transparent'
+                    )
+                
                 st.altair_chart(chart, use_container_width=True)
     
             if chart_option == "☀️ 太陽光発電 (W)":
@@ -618,8 +699,7 @@ def render_tab1_live():
                 draw_altair_chart_compact(df_th_plot, ["battery_soc"], "%")
                 draw_altair_chart_compact(df_th_plot, ["battery_w"], "W")
             else:
-                draw_altair_chart_compact(df_th_plot, ["pv_w", "grid_w", "battery_w"], "W")
-                draw_altair_chart_compact(df_th_plot, ["battery_soc"], "%")
+                draw_altair_chart_compact(df_th_plot, ["pv_w", "grid_w", "battery_w", "battery_soc"], "W")
     
     st.divider()
 
@@ -787,13 +867,32 @@ with tab3:
     health = get_battery_health_metrics()
     self_suff = get_self_sufficiency_data()
     
+    # 蓄電池の生涯総サイクル数 ＆ 推定SOHの計算
+    cum_charge_kwh = batt_sys_info.get("cum_charge_kwh", 0) if batt_sys_info else 0
+    cum_discharge_kwh = batt_sys_info.get("cum_discharge_kwh", 0) if batt_sys_info else 0
+    
+    if cum_charge_kwh > 0:
+        total_cycles = (cum_charge_kwh + cum_discharge_kwh) / 2.0 / 11.1
+    else:
+        # 実機から取得できなかった場合の稼働日数ベース推定（1日約0.75サイクル）
+        total_cycles = health['total_telemetry_days'] * 0.75
+        
+    total_cycles = max(1.0, total_cycles)
+    
+    # 推定SOH (State of Health) 劣化計算モデル (ニチコンT5サイクル特性に基づく概算)
+    # ニチコンの仕様上、6000サイクル以上で容量60%以上維持。
+    # 1サイクルあたり 0.005%〜0.007% の容量劣化と、経年劣化を加算
+    calendar_loss = health['total_telemetry_days'] * (3.0 / 365.0) # 年間約3.0%の経年劣化
+    cycle_loss = total_cycles * 0.005
+    est_soh = max(70.0, min(100.0, 100.0 - calendar_loss - cycle_loss))
+    
     h_col1, h_col2, h_col3 = st.columns(3)
     with h_col1:
-        st.metric("🛡️ 寿命保護スコア (JIT)", f"{health['life_protection_score']} / 100", help="満充電放置時間の削減実績に基づくスコア")
+        st.metric("🩺 バッテリー健康度 (SOH)", f"{est_soh:.2f} %", help="出荷時を100%とした時の現在の容量維持率の推定値")
     with h_col2:
-        st.metric("🩺 バッテリー健康グレード", health['health_grade'])
+        st.metric("🔄 生涯総サイクル数", f"{int(round(total_cycles)):,} 回", help="定格容量分の充放電を1サイクルとした総カウント数")
     with h_col3:
-        st.metric("🌱 平均エネルギー自給率", f"{self_suff['average_percent']}%", help="過去30日間の総消費量に対する太陽光・蓄電池供給率")
+        st.metric("🛡️ 寿命保護スコア (JIT)", f"{health['life_protection_score']} / 100", help="AI満充電放置時間の削減実績に基づく保護スコア")
 
     # ==========================================
     # 🌲 経済効果 ＆ エコ貢献度統計 (直近30日の実績)
@@ -926,7 +1025,7 @@ with tab3:
             st.markdown(f"**💴 日別電気代 (円/日) 推移**")
             st.bar_chart(df_hh[["cost_yen"]], y_label="電気代 (円)")
         else:
-            st.info("※ 有効な日別データが見つかりません。左側サイドバーの「直近14日間の歴史データを同期」ボタンを押すか、過去CSVを取り込んでください。")
+            st.info("※ 有効な日別データが見つかりません。左側サイドバーの「直近14日間の履歴データを同期」ボタンを押すか、過去CSVを取り込んでください。")
             
     with hist_sub_tab2:
         m_history = get_hems_monthly_history()
@@ -1026,14 +1125,14 @@ with st.expander("⚙️ システム手動操作・同期（サイドバーが�
                 
     st.divider()
     st.markdown("##### 📥 過去データの同期")
-    if st.button("📥 直近14日間の歴史データを同期", key="fb_sync_btn", use_container_width=True):
-        with st.spinner("HEMS Web コントローラから直近14日分のログを取得中..."):
+    if st.button("📥 直近14日間の履歴データを同期", key="fb_sync_btn", use_container_width=True):
+        with st.spinner("HEMS Web コントローラから直近14日分の履歴ログを取得中..."):
             count = fetch_hems_past_days_history(days=14)
             if count > 0:
-                st.success(f"直近 {count} 日分のログを同期しました！")
+                st.success(f"直近 {count} 日分の履歴ログを同期しました！")
                 time.sleep(0.8)
                 st.rerun()
             else:
-                st.info("同期対象の新しいログはありません。")
+                st.info("同期対象の新しい履歴ログはありません。")
 
 
