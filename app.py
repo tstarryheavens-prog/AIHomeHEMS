@@ -797,309 +797,319 @@ def render_tab1_live():
     components.html(bars_html, height=240)
 
 with tab1:
-    render_tab1_live()
+    try:
+        render_tab1_live()
+    except Exception as e:
+        st.error(f"⚠️ ライブモニター表示中にエラーが発生しました: {e}")
 
 with tab2:
-    st.markdown("### 🎯 翌日最適充電スケジューリング ＆ ニチコンT5 蓄電池制御")
-    
-    from datetime import datetime, timezone, timedelta
-    JST = timezone(timedelta(hours=9))
-    
-    client = NichiconEchonetClient(enabled=config.get("nichicon", {}).get("enabled", True))
-    batt_sys_info = client.get_full_system_info()
-    cmd_status = st.session_state.get("last_battery_cmd_status")
-    
-    fit_end_date_str = config.get("fit_setting", {}).get("fit_end_date", "2026-11-27")
     try:
-        fit_end_formatted = datetime.strptime(fit_end_date_str, "%Y-%m-%d").strftime("%Y/%m/%d")
-    except Exception:
-        fit_end_formatted = fit_end_date_str.replace("-", "/")
+        st.markdown("### 🎯 翌日最適充電スケジューリング ＆ ニチコンT5 蓄電池制御")
         
-    st.warning(
-        f"💡 **中部電力「スマートライフプラン【夜とく】」(21時〜7時) × 蓄電池寿命最得制御**:\n"
-        f"・**🔋 寿命保護JIT充電 (03:00〜06:30)**: 朝の使用直前3.5時間で急速充電し、100%満充電保持時間を極小化！蓄電池の寿命を最大化します。\n"
-        f"・**💰 31円利ざや売電 (〜{fit_end_formatted})**: 昼間(7-21時)は `0x43 (放電/売電優先)` で太陽光(31.0円/kWh)を全量売電！深夜16.3円との差額 `+14.7円/kWh` の純利益を追及！"
-    )
-    
-    # ⏰ 現在設定されている蓄電池の充放電タイマー設定スケジュール
-    st.markdown("#### ⏰ 現在の蓄電池 充放電タイマー設定スケジュール")
-    st.markdown(
-        """
-        | タイマー設定項目 | 設定時間帯（時刻窓） | 運転制御モード | 動作詳細 ＆ 電力料金 |
-        | :--- | :--- | :--- | :--- |
-        | ⚡ **充電時間帯** | **`03:00` 〜 `06:30`** | `0x42` 充電モード | 中部電力「夜とく」16.30円/kWh でJIT急速充電 |
-        | 🛑 **充電停止時間** | **`06:30` 〜 `03:00`** | 充電OFF / 停止 | 03:00〜06:30 以外のすべての時間帯で充電動作を自動停止 |
-        | 🔋 **放電時間帯** | **`06:35` 〜 `21:00`** | `0x43` 放電/売電モード | 昼間自家消費 ＆ 31.0円/kWh 高額売電 (卒FIT後は自家消費) |
-        | ⏸️ **放電停止時間** | **`21:00` 〜 `07:00`** | `0x44` 待機 (放電OFF) | 夜間安価料金帯の放電停止ガード (系統電力を優先使用) |
-        """
-    )
-    
-    latest_sched = get_latest_schedule()
-    
-    col_sched, col_batt = st.columns([1.2, 1])
-    
-    with col_sched:
-        st.markdown("#### 🤖 翌日AI最適化予測 ＆ 全自動スケジュール")
-        if latest_sched:
-            details = json.loads(latest_sched.get("details_json", "{}"))
-            target_soc_val = int(round(latest_sched.get('target_night_soc', 100)))
-            pv_est_val = int(round(latest_sched.get('est_pv_kwh', 0)))
-            load_est_val = int(round(latest_sched.get('est_load_kwh', 0)))
+        from datetime import datetime, timezone, timedelta
+        JST = timezone(timedelta(hours=9))
+        
+        try:
+            client = NichiconEchonetClient(enabled=config.get("nichicon", {}).get("enabled", True))
+            batt_sys_info = client.get_full_system_info()
+        except Exception:
+            batt_sys_info = {}
             
-            m_c1, m_c2, m_c3 = st.columns(3)
-            m_c1.metric("自動充電目標 (今夜)", f"{target_soc_val} %", help="中部電力「夜とく」16.30円/kWh時間帯に充電する目標値")
-            m_c2.metric("翌日予想 発電量", f"{pv_est_val} kWh")
-            m_c3.metric("翌日予想 消費量", f"{load_est_val} kWh")
+        cmd_status = st.session_state.get("last_battery_cmd_status")
+        
+        fit_end_date_str = config.get("fit_setting", {}).get("fit_end_date", "2026-11-27")
+        try:
+            fit_end_formatted = datetime.strptime(fit_end_date_str, "%Y-%m-%d").strftime("%Y/%m/%d")
+        except Exception:
+            fit_end_formatted = fit_end_date_str.replace("-", "/")
             
-            st.success(
-                f"🤖 **AI全自動制御が有効化されています**\n\n"
-                f"・**動作予定**: 深夜 JIT 充電帯 (03:00〜06:30) に、夜間最安電力を **{target_soc_val}%** まで自動的に充電し、"
-                f"それ以外の深夜オフピーク時間は放電を停止(系統優先)させます。昼間時間帯は自動で自家消費/売電運転に移行します。\n"
-                f"・**次回自動更新**: 本日 21:00 頃に翌日の最新天気予報を反映して再計算されます。"
-            )
-        else:
-            st.info("🤖 AI自動スケジュール生成中... 本日夜に最適充電計画が反映されます。")
-
+        st.warning(
+            f"💡 **中部電力「スマートライフプラン【夜とく】」(21時〜7時) × 蓄電池寿命最得制御**:\n"
+            f"・**🔋 寿命保護JIT充電 (03:00〜06:30)**: 朝の使用直前3.5時間で急速充電し、100%満充電保持時間を極小化！蓄電池の寿命を最大化します。\n"
+            f"・**💰 31円利ざや売電 (〜{fit_end_formatted})**: 昼間(7-21時)は `0x43 (放電/売電優先)` で太陽光(31.0円/kWh)を全量売電！深夜16.3円との差額 `+14.7円/kWh` の純利益を追及！"
+        )
+        
+        # ⏰ 現在設定されている蓄電池の充放電タイマー設定スケジュール
+        st.markdown("#### ⏰ 現在の蓄電池 充放電タイマー設定スケジュール")
+        st.markdown(
+            """
+            | タイマー設定項目 | 設定時間帯（時刻窓） | 運転制御モード | 動作詳細 ＆ 電力料金 |
+            | :--- | :--- | :--- | :--- |
+            | ⚡ **充電時間帯** | **`03:00` 〜 `06:30`** | `0x42` 充電モード | 中部電力「夜とく」16.30円/kWh でJIT急速充電 |
+            | 🛑 **充電停止時間** | **`06:30` 〜 `03:00`** | 充電OFF / 停止 | 03:00〜06:30 以外のすべての時間帯で充電動作を自動停止 |
+            | 🔋 **放電時間帯** | **`06:35` 〜 `21:00`** | `0x43` 放電/売電モード | 昼間自家消費 ＆ 31.0円/kWh 高額売電 (卒FIT後は自家消費) |
+            | ⏸️ **放電停止時間** | **`21:00` 〜 `07:00`** | `0x44` 待機 (放電OFF) | 夜間安価料金帯の放電停止ガード (系統電力を優先使用) |
+            """
+        )
+        
+        latest_sched = get_latest_schedule()
+        
+        col_sched, col_batt = st.columns([1.2, 1])
+        
+        with col_sched:
+            st.markdown("#### 🤖 翌日AI最適化予測 ＆ 全自動スケジュール")
+            if latest_sched:
+                details = json.loads(latest_sched.get("details_json", "{}"))
+                target_soc_val = int(round(latest_sched.get('target_night_soc', 100)))
+                pv_est_val = int(round(latest_sched.get('est_pv_kwh', 0)))
+                load_est_val = int(round(latest_sched.get('est_load_kwh', 0)))
+                
+                m_c1, m_c2, m_c3 = st.columns(3)
+                m_c1.metric("自動充電目標 (今夜)", f"{target_soc_val} %", help="中部電力「夜とく」16.30円/kWh時間帯に充電する目標値")
+                m_c2.metric("翌日予想 発電量", f"{pv_est_val} kWh")
+                m_c3.metric("翌日予想 消費量", f"{load_est_val} kWh")
+                
+                st.success(
+                    f"🤖 **AI全自動制御が有効化されています**\n\n"
+                    f"・**動作予定**: 深夜 JIT 充電帯 (03:00〜06:30) に、夜間最安電力を **{target_soc_val}%** まで自動的に充電し、"
+                    f"それ以外の深夜オフピーク時間は放電を停止(系統優先)させます。昼間時間帯は自動で自家消費/売電運転に移行します。\n"
+                    f"・**次回自動更新**: 本日 21:00 頃に翌日の最新天気予報を反映して再計算されます。"
+                )
+            else:
+                st.info("🤖 AI自動スケジュール生成中... 本日夜に最適充電計画が反映されます。")
+    except Exception as e:
+        st.error(f"⚠️ AI制御タブの表示中にエラーが発生しました: {e}")
 
 with tab3:
-    st.markdown("#### 🛡️ 蓄電池寿命診断 ＆ 自給率分析")
-    
-    from database import get_battery_health_metrics, get_self_sufficiency_data
-    import random
-    
-    health = get_battery_health_metrics()
-    self_suff = get_self_sufficiency_data()
-    
     try:
-        client = NichiconEchonetClient(enabled=config.get("nichicon", {}).get("enabled", False))
-        batt_sys_info = client.get_full_system_info()
-    except Exception:
-        batt_sys_info = {}
-    
-    cum_charge_kwh = batt_sys_info.get("cum_charge_kwh", 0) if batt_sys_info else 0
-    cum_discharge_kwh = batt_sys_info.get("cum_discharge_kwh", 0) if batt_sys_info else 0
-    
-    if cum_charge_kwh > 0:
-        total_cycles = (cum_charge_kwh + cum_discharge_kwh) / 2.0 / 11.1
-    else:
-        total_cycles = health.get('total_telemetry_days', 30) * 0.75
+        st.markdown("#### 🛡️ 蓄電池寿命診断 ＆ 自給率分析")
         
-    total_cycles = max(12.0, total_cycles)
-    
-    calendar_loss = health.get('total_telemetry_days', 30) * (3.0 / 365.0)
-    cycle_loss = total_cycles * 0.005
-    est_soh = max(70.0, min(100.0, 99.4 - calendar_loss - cycle_loss))
-    
-    h_col1, h_col2, h_col3 = st.columns(3)
-    with h_col1:
-        st.metric("🩺 SOH (健康度)", f"{est_soh:.1f} %", help="出荷時を100%とした時の現在の容量維持率の推定値")
-    with h_col2:
-        st.metric("🔄 総サイクル数", f"{int(round(total_cycles)):,} 回", help="定格容量分の充放電を1サイクルとした総カウント数")
-    with h_col3:
-        st.metric("🛡️ JIT保護スコア", f"{health.get('life_protection_score', 98)} 点", help="AI満充電放置時間の削減実績に基づく保護スコア")
-
-    # ==========================================
-    # 🌲 経済効果 ＆ エコ貢献度統計
-    # ==========================================
-    h_history_30 = get_hems_daily_history(limit=30, filter_zero=True)
-    if not h_history_30:
-        h_history_30 = [
-            {"buy_kwh": random.uniform(5, 12), "sale_kwh": random.uniform(8, 22), "pv_kwh": random.uniform(14, 25), "self_kwh": random.uniform(6, 15), "cost_yen": random.randint(150, 450)}
-            for _ in range(30)
-        ]
+        from database import get_battery_health_metrics, get_self_sufficiency_data
+        import random
         
-    self_kwh_sum = sum([r.get("self_kwh", 0) or 0 for r in h_history_30])
-    buy_kwh_sum = sum([r.get("buy_kwh", 0) or 0 for r in h_history_30])
-    sale_kwh_sum = sum([r.get("sale_kwh", 0) or 0 for r in h_history_30])
-    
-    co2_kg = self_kwh_sum * 0.435
-    sugi_trees = co2_kg / 14.0
-    
-    from datetime import datetime, timezone, timedelta
-    JST = timezone(timedelta(hours=9))
-    now_dt_check = datetime.now(JST)
-    fit_end_str_check = config.get("fit_setting", {}).get("fit_end_date", "2026-11-27")
-    try:
-        fit_end_date_check = datetime.strptime(fit_end_str_check, "%Y-%m-%d").date()
-    except Exception:
-        fit_end_date_check = datetime(2026, 11, 27).date()
-    fit_end_check = datetime(fit_end_date_check.year, fit_end_date_check.month, fit_end_date_check.day, 23, 59, 59, tzinfo=JST)
-    is_fit_active_check = (now_dt_check <= fit_end_check)
+        health = get_battery_health_metrics()
+        self_suff = get_self_sufficiency_data()
+        
+        try:
+            client = NichiconEchonetClient(enabled=config.get("nichicon", {}).get("enabled", False))
+            batt_sys_info = client.get_full_system_info()
+        except Exception:
+            batt_sys_info = {}
+        
+        cum_charge_kwh = batt_sys_info.get("cum_charge_kwh", 0) if batt_sys_info else 0
+        cum_discharge_kwh = batt_sys_info.get("cum_discharge_kwh", 0) if batt_sys_info else 0
+        
+        if cum_charge_kwh > 0:
+            total_cycles = (cum_charge_kwh + cum_discharge_kwh) / 2.0 / 11.1
+        else:
+            total_cycles = health.get('total_telemetry_days', 30) * 0.75
+            
+        total_cycles = max(12.0, total_cycles)
+        
+        calendar_loss = health.get('total_telemetry_days', 30) * (3.0 / 365.0)
+        cycle_loss = total_cycles * 0.005
+        est_soh = max(70.0, min(100.0, 99.4 - calendar_loss - cycle_loss))
+        
+        h_col1, h_col2, h_col3 = st.columns(3)
+        with h_col1:
+            st.metric("🩺 SOH (健康度)", f"{est_soh:.1f} %", help="出荷時を100%とした時の現在の容量維持率の推定値")
+        with h_col2:
+            st.metric("🔄 総サイクル数", f"{int(round(total_cycles)):,} 回", help="定格容量分の充放電を1サイクルとした総カウント数")
+        with h_col3:
+            st.metric("🛡️ JIT保護スコア", f"{health.get('life_protection_score', 98)} 点", help="AI満充電放置時間の削減実績に基づく保護スコア")
 
-    solar_savings = self_kwh_sum * 36.0
-    arbitrage_savings = (buy_kwh_sum * 0.8) * (31.0 - 16.30) if is_fit_active_check else 0
-    total_savings = solar_savings + arbitrage_savings
+        # 経済効果 ＆ エコ貢献度統計
+        h_history_30 = get_hems_daily_history(limit=30, filter_zero=True)
+        if not h_history_30:
+            h_history_30 = [
+                {"buy_kwh": random.uniform(5, 12), "sale_kwh": random.uniform(8, 22), "pv_kwh": random.uniform(14, 25), "self_kwh": random.uniform(6, 15), "cost_yen": random.randint(150, 450)}
+                for _ in range(30)
+            ]
+            
+        self_kwh_sum = sum([r.get("self_kwh", 0) or 0 for r in h_history_30])
+        buy_kwh_sum = sum([r.get("buy_kwh", 0) or 0 for r in h_history_30])
+        sale_kwh_sum = sum([r.get("sale_kwh", 0) or 0 for r in h_history_30])
+        
+        co2_kg = self_kwh_sum * 0.435
+        sugi_trees = co2_kg / 14.0
+        
+        from datetime import datetime, timezone, timedelta
+        JST = timezone(timedelta(hours=9))
+        now_dt_check = datetime.now(JST)
+        fit_end_str_check = config.get("fit_setting", {}).get("fit_end_date", "2026-11-27")
+        try:
+            fit_end_date_check = datetime.strptime(fit_end_str_check, "%Y-%m-%d").date()
+        except Exception:
+            fit_end_date_check = datetime(2026, 11, 27).date()
+        fit_end_check = datetime(fit_end_date_check.year, fit_end_date_check.month, fit_end_date_check.day, 23, 59, 59, tzinfo=JST)
+        is_fit_active_check = (now_dt_check <= fit_end_check)
 
-    st.markdown("##### 🌲 直近30日間のエネマネ削減実績")
-    eco_col1, eco_col2, eco_col3 = st.columns(3)
-    with eco_col1:
-        st.metric("💰 削減金額", f"¥{int(round(total_savings)):,}")
-    with eco_col2:
-        st.metric("📉 CO2削減", f"{co2_kg:.0f} kg")
-    with eco_col3:
-        st.metric("🌲 杉の木換算", f"{sugi_trees:.1f} 本")
+        solar_savings = self_kwh_sum * 36.0
+        arbitrage_savings = (buy_kwh_sum * 0.8) * (31.0 - 16.30) if is_fit_active_check else 0
+        total_savings = solar_savings + arbitrage_savings
 
-    saved_hrs = health.get('saved_hours_per_day', 4.5)
-    st.markdown(
-        f"""
-        <div class="glass-card" style="padding: 10px 14px; margin-top: 8px; margin-bottom: 12px;">
-            <div style="font-size:0.8rem; font-weight:800; color:#60a5fa; margin-bottom:4px;">📊 蓄電池JIT延命・保護レポート</div>
-            <div style="font-size:0.75rem; color:#f8fafc; line-height:1.4;">
-                朝の利用直前急速充電により1日平均 <strong>{saved_hrs} 時間</strong> の満充電放置時間を削減。<br>
-                <span style="color: #94a3b8; font-size:0.7rem;">※ 蓄電池寿命最得制御適用中</span>
+        st.markdown("##### 🌲 直近30日間のエネマネ削減実績")
+        eco_col1, eco_col2, eco_col3 = st.columns(3)
+        with eco_col1:
+            st.metric("💰 削減金額", f"¥{int(round(total_savings)):,}")
+        with eco_col2:
+            st.metric("📉 CO2削減", f"{co2_kg:.0f} kg")
+        with eco_col3:
+            st.metric("🌲 杉の木換算", f"{sugi_trees:.1f} 本")
+
+        saved_hrs = health.get('saved_hours_per_day', 4.5)
+        st.markdown(
+            f"""
+            <div class="glass-card" style="padding: 10px 14px; margin-top: 8px; margin-bottom: 12px;">
+                <div style="font-size:0.8rem; font-weight:800; color:#60a5fa; margin-bottom:4px;">📊 蓄電池JIT延命・保護レポート</div>
+                <div style="font-size:0.75rem; color:#f8fafc; line-height:1.4;">
+                    朝の利用直前急速充電により1日平均 <strong>{saved_hrs} 時間</strong> の満充電放置時間を削減。<br>
+                    <span style="color: #94a3b8; font-size:0.7rem;">※ 蓄電池寿命最得制御適用中</span>
+                </div>
             </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-    
-    # 🩺 ニチコン詳細診断
-    with st.expander("🩺 ニチコンT5 ECHONET Liteデバイス詳細", expanded=False):
-        d_col1, d_col2 = st.columns(2)
-        with d_col1:
-            st.markdown("**🔋 デバイス状態 (Class 0x027D)**")
-            st.write(f"・**IP/Port**: `{config.get('nichicon', {}).get('ip_address', '192.168.2.12')}:3610`")
-            st.write(f"・**動作モード**: `{batt_sys_info.get('mode', 'AUTO (0x45)')}`")
-            st.write(f"・**SOC**: `{batt_sys_info.get('soc', 65)} %` | **残容量**: `{batt_sys_info.get('battery_wh', 9685):,} Wh`")
-        with d_col2:
-            st.markdown("**📊 充放電 / 太陽光累計**")
-            st.write(f"・**充放電**: `{batt_sys_info.get('power_w', 0):,} W` (+充電 / -放電)")
-            st.write(f"・**累計充電**: `{batt_sys_info.get('cum_charge_kwh', 1240):,} kWh` | **放電**: `{batt_sys_info.get('cum_discharge_kwh', 1180):,} kWh`")
-
-    # 自給率グラフの描画
-    st.markdown("##### 📈 日別エネルギー自給率推移 (%)")
-    import altair as alt
-    
-    daily_suff_data = self_suff.get("daily_data", [])
-    if not daily_suff_data:
-        base_date = datetime.now() - timedelta(days=30)
-        daily_suff_data = [
-            {"date": (base_date + timedelta(days=i)).strftime("%Y-%m-%d"), "self_sufficiency_percent": min(100, max(45, int(75 + random.uniform(-20, 20))))}
-            for i in range(30)
-        ]
+            """,
+            unsafe_allow_html=True
+        )
         
-    df_suff = pd.DataFrame(daily_suff_data)
-    chart_suff = alt.Chart(df_suff).mark_area(
-        color='rgba(52, 211, 153, 0.15)',
-        line={'color': '#34d399', 'strokeWidth': 1.8},
-        interpolate='monotone'
-    ).encode(
-        x=alt.X('date:T', title=None, axis=alt.Axis(format='%m/%d', grid=True, gridColor='rgba(255,255,255,0.06)', labelColor='#cbd5e1')),
-        y=alt.Y('self_sufficiency_percent:Q', title=None, scale=alt.Scale(domain=[0, 100]), axis=alt.Axis(grid=True, gridColor='rgba(255,255,255,0.06)', labelColor='#cbd5e1')),
-        tooltip=[
-            alt.Tooltip('date:T', title='日付', format='%Y/%m/%d'),
-            alt.Tooltip('self_sufficiency_percent:Q', title='自給率 (%)')
-        ]
-    ).properties(
-        height=95
-    ).configure_view(
-        strokeOpacity=0
-    ).configure(
-        background='transparent'
-    )
-    st.altair_chart(chart_suff, use_container_width=True)
+        # 🩺 ニチコン詳細診断
+        with st.expander("🩺 ニチコンT5 ECHONET Liteデバイス詳細", expanded=False):
+            d_col1, d_col2 = st.columns(2)
+            with d_col1:
+                st.markdown("**🔋 デバイス状態 (Class 0x027D)**")
+                st.write(f"・**IP/Port**: `{config.get('nichicon', {}).get('ip_address', '192.168.2.12')}:3610`")
+                st.write(f"・**動作モード**: `{batt_sys_info.get('mode', 'AUTO (0x45)')}`")
+                st.write(f"・**SOC**: `{batt_sys_info.get('soc', 65)} %` | **残容量**: `{batt_sys_info.get('battery_wh', 9685):,} Wh`")
+            with d_col2:
+                st.markdown("**📊 充放電 / 太陽光累計**")
+                st.write(f"・**充放電**: `{batt_sys_info.get('power_w', 0):,} W` (+充電 / -放電)")
+                st.write(f"・**累計充電**: `{batt_sys_info.get('cum_charge_kwh', 1240):,} kWh` | **放電**: `{batt_sys_info.get('cum_discharge_kwh', 1180):,} kWh`")
 
-    # HEMS 実機 ＆ CSV過去ログ実績
-    st.markdown("##### 📊 HEMS 実機 ＆ CSV過去ログ実績 (kWh / 円)")
-    
-    from hems_monthly_importer import get_hems_monthly_history
-    from katene_importer import import_katene_csv, get_historical_load_summary
-    
-    hist_sub_tab1, hist_sub_tab2, hist_sub_tab3 = st.tabs([
-        "⚡ 日別推移", 
-        "📅 月別推移 (2016〜)",
-        "📁 CSVインポート"
-    ])
-    
-    with hist_sub_tab1:
-        h_history = get_hems_daily_history(limit=1000, filter_zero=True)
-        if not h_history:
-            base_d = datetime.now() - timedelta(days=30)
-            h_history = [
-                {
-                    "date_str": (base_d + timedelta(days=i)).strftime("%Y-%m-%d"),
-                    "buy_kwh": round(random.uniform(4.0, 10.0), 1),
-                    "sale_kwh": round(random.uniform(10.0, 25.0), 1),
-                    "pv_kwh": round(random.uniform(15.0, 28.0), 1),
-                    "self_kwh": round(random.uniform(5.0, 12.0), 1),
-                    "cost_yen": random.randint(120, 380)
-                }
+        # 自給率グラフの描画
+        st.markdown("##### 📈 日別エネルギー自給率推移 (%)")
+        import altair as alt
+        
+        daily_suff_data = self_suff.get("daily_data", [])
+        if not daily_suff_data:
+            base_date = datetime.now() - timedelta(days=30)
+            daily_suff_data = [
+                {"date": (base_date + timedelta(days=i)).strftime("%Y-%m-%d"), "self_sufficiency_percent": min(100, max(45, int(75 + random.uniform(-20, 20))))}
                 for i in range(30)
             ]
             
-        df_hh = pd.DataFrame(h_history)
-        df_hh["date_str"] = pd.to_datetime(df_hh["date_str"])
-        df_hh = df_hh.sort_values("date_str").set_index("date_str")
-        
-        st.markdown(f"**⚡ 日別 4大電力量推移 (kWh)**")
-        kwh_cols = [c for c in ["buy_kwh", "sale_kwh", "pv_kwh", "self_kwh"] if c in df_hh.columns]
-        if kwh_cols:
-            df_kwh_show = df_hh[kwh_cols].rename(columns={
-                "buy_kwh": "買電",
-                "sale_kwh": "売電",
-                "pv_kwh": "発電",
-                "self_kwh": "自家消費"
-            })
-            st.line_chart(df_kwh_show, height=130)
-
-        st.markdown(f"**💴 日別電気代 (円) 推移**")
-        st.bar_chart(df_hh[["cost_yen"]], y_label="電気代", height=120)
-            
-    with hist_sub_tab2:
-        m_history = get_hems_monthly_history()
-        if not m_history:
-            m_history = [
-                {"year_month": f"2025-{m:02d}-01", "load_kwh": random.randint(300, 550), "cost_yen": random.randint(8000, 16000)}
-                for m in range(1, 13)
+        df_suff = pd.DataFrame(daily_suff_data)
+        chart_suff = alt.Chart(df_suff).mark_area(
+            color='rgba(52, 211, 153, 0.15)',
+            line={'color': '#34d399', 'strokeWidth': 1.8},
+            interpolate='monotone'
+        ).encode(
+            x=alt.X('date:T', title=None, axis=alt.Axis(format='%m/%d', grid=True, gridColor='rgba(255,255,255,0.06)', labelColor='#cbd5e1')),
+            y=alt.Y('self_sufficiency_percent:Q', title=None, scale=alt.Scale(domain=[0, 100]), axis=alt.Axis(grid=True, gridColor='rgba(255,255,255,0.06)', labelColor='#cbd5e1')),
+            tooltip=[
+                alt.Tooltip('date:T', title='日付', format='%Y/%m/%d'),
+                alt.Tooltip('self_sufficiency_percent:Q', title='自給率 (%)')
             ]
-        df_mh = pd.DataFrame(m_history)
-        df_mh["year_month"] = pd.to_datetime(df_mh["year_month"])
-        df_mh = df_mh.sort_values("year_month").set_index("year_month")
+        ).properties(
+            height=95
+        ).configure_view(
+            strokeOpacity=0
+        ).configure(
+            background='transparent'
+        )
+        st.altair_chart(chart_suff, use_container_width=True)
+
+        # HEMS 実機 ＆ CSV過去ログ実績
+        st.markdown("##### 📊 HEMS 実機 ＆ CSV過去ログ実績 (kWh / 円)")
         
-        st.markdown(f"**月別消費電力量 (kWh)**")
-        if "load_kwh" in df_mh.columns:
-            st.bar_chart(df_mh[["load_kwh"]], y_label="kWh", height=120)
+        from hems_monthly_importer import get_hems_monthly_history
+        from katene_importer import import_katene_csv, get_historical_load_summary
         
-        st.markdown(f"**月別電気代 (円)**")
-        if "cost_yen" in df_mh.columns:
-            st.bar_chart(df_mh[["cost_yen"]], y_label="円", height=120)
-            
-    with hist_sub_tab3:
-        st.markdown("**電力会社・HEMS全形式 CSVログ取り込み**")
+        hist_sub_tab1, hist_sub_tab2, hist_sub_tab3 = st.tabs([
+            "⚡ 日別推移", 
+            "📅 月別推移 (2016〜)",
+            "📁 CSVインポート"
+        ])
         
-        h_summary = get_historical_load_summary()
-        if h_summary.get("count", 0) > 0:
-            st.success(
-                f"💾 **保存中**: **{h_summary['count']:,} 件** | "
-                f"**期間**: `{h_summary['start_date']}` 〜 `{h_summary['end_date']}` | "
-                f"**総電力量**: **{h_summary['total_kwh']:,} kWh**"
-            )
-        else:
-            st.info("💡 下記のファイル選択から電力会社（カテエネ等）のCSVログを取り込むことができます。")
-            
-        uploaded_csv = st.file_uploader("過去の電力使用量CSVファイルをドロップ", type=["csv"])
-        if uploaded_csv is not None:
-            temp_path = "temp_uploaded_katene.csv"
-            with open(temp_path, "wb") as f:
-                f.write(uploaded_csv.getbuffer())
-            
-            res = import_katene_csv(temp_path)
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
+        with hist_sub_tab1:
+            h_history = get_hems_daily_history(limit=1000, filter_zero=True)
+            if not h_history:
+                base_d = datetime.now() - timedelta(days=30)
+                h_history = [
+                    {
+                        "date_str": (base_d + timedelta(days=i)).strftime("%Y-%m-%d"),
+                        "buy_kwh": round(random.uniform(4.0, 10.0), 1),
+                        "sale_kwh": round(random.uniform(10.0, 25.0), 1),
+                        "pv_kwh": round(random.uniform(15.0, 28.0), 1),
+                        "self_kwh": round(random.uniform(5.0, 12.0), 1),
+                        "cost_yen": random.randint(120, 380)
+                    }
+                    for i in range(30)
+                ]
                 
-            if res["success"]:
-                st.success(f"🎉 インポート成功！ ({res['total_rows']:,} 行)")
-                time.sleep(1.5)
-                st.rerun()
+            df_hh = pd.DataFrame(h_history)
+            df_hh["date_str"] = pd.to_datetime(df_hh["date_str"])
+            df_hh = df_hh.sort_values("date_str").set_index("date_str")
+            
+            st.markdown(f"**⚡ 日別 4大電力量推移 (kWh)**")
+            kwh_cols = [c for c in ["buy_kwh", "sale_kwh", "pv_kwh", "self_kwh"] if c in df_hh.columns]
+            if kwh_cols:
+                df_kwh_show = df_hh[kwh_cols].rename(columns={
+                    "buy_kwh": "買電",
+                    "sale_kwh": "売電",
+                    "pv_kwh": "発電",
+                    "self_kwh": "自家消費"
+                })
+                st.line_chart(df_kwh_show)
+
+            st.markdown(f"**💴 日別電気代 (円) 推移**")
+            st.bar_chart(df_hh[["cost_yen"]])
+                
+        with hist_sub_tab2:
+            m_history = get_hems_monthly_history()
+            if not m_history:
+                m_history = [
+                    {"year_month": f"2025-{m:02d}-01", "load_kwh": random.randint(300, 550), "cost_yen": random.randint(8000, 16000)}
+                    for m in range(1, 13)
+                ]
+            df_mh = pd.DataFrame(m_history)
+            df_mh["year_month"] = pd.to_datetime(df_mh["year_month"])
+            df_mh = df_mh.sort_values("year_month").set_index("year_month")
+            
+            st.markdown(f"**月別消費電力量 (kWh)**")
+            if "load_kwh" in df_mh.columns:
+                st.bar_chart(df_mh[["load_kwh"]])
+            
+            st.markdown(f"**月別電気代 (円)**")
+            if "cost_yen" in df_mh.columns:
+                st.bar_chart(df_mh[["cost_yen"]])
+                
+        with hist_sub_tab3:
+            st.markdown("**電力会社・HEMS全形式 CSVログ取り込み**")
+            
+            h_summary = get_historical_load_summary()
+            if h_summary.get("count", 0) > 0:
+                st.success(
+                    f"💾 **保存中**: **{h_summary['count']:,} 件** | "
+                    f"**期間**: `{h_summary['start_date']}` 〜 `{h_summary['end_date']}` | "
+                    f"**総電力量**: **{h_summary['total_kwh']:,} kWh**"
+                )
             else:
-                st.error(f"❌ インポート失敗: {res['error']}")
+                st.info("💡 下記のファイル選択から電力会社（カテエネ等）のCSVログを取り込むことができます。")
                 
-        if st.button("🧪 サンプル過去CSV適用"):
-            import create_sample_csv
-            res = import_katene_csv("sample_katene_2016_2026.csv")
-            if res["success"]:
-                st.success(f"サンプル ({res['total_rows']:,} 行) を読み込みました！")
-                st.rerun()
+            uploaded_csv = st.file_uploader("過去の電力使用量CSVファイルをドロップ", type=["csv"])
+            if uploaded_csv is not None:
+                temp_path = "temp_uploaded_katene.csv"
+                with open(temp_path, "wb") as f:
+                    f.write(uploaded_csv.getbuffer())
+                
+                res = import_katene_csv(temp_path)
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+                    
+                if res["success"]:
+                    st.success(f"🎉 インポート成功！ ({res['total_rows']:,} 行)")
+                    time.sleep(1.5)
+                    st.rerun()
+                else:
+                    st.error(f"❌ インポート失敗: {res['error']}")
+                    
+            if st.button("🧪 サンプル過去CSV適用"):
+                import create_sample_csv
+                res = import_katene_csv("sample_katene_2016_2026.csv")
+                if res["success"]:
+                    st.success(f"サンプル ({res['total_rows']:,} 行) を読み込みました！")
+                    st.rerun()
+    except Exception as e:
+        st.error(f"⚠️ 診断・分析タブの表示中にエラーが発生しました: {e}")
 
 # ==========================================
 # ⚙️ メイン画面下部フォールバック操作パネル (サイドバーが開けない環境用)
