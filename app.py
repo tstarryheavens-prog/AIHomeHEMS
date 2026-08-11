@@ -280,23 +280,28 @@ st.markdown(
         box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
     }
     
-    /* タブのスタイル調整 */
+    /* タブのスタイル調整 (横幅ぴったりレスポンシブ・スクロール不要) */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
+        display: flex !important;
+        width: 100% !important;
+        gap: 4px !important;
         background-color: rgba(15, 23, 42, 0.7);
-        padding: 6px;
+        padding: 4px;
         border-radius: 12px;
         border: 1px solid rgba(255, 255, 255, 0.1);
     }
     .stTabs [data-baseweb="tab"] {
-        height: 44px;
-        white-space: pre-wrap;
+        flex: 1 1 0% !important;
+        justify-content: center !important;
+        height: 40px !important;
+        white-space: nowrap !important;
         background-color: transparent;
         border-radius: 8px;
         color: #cbd5e1 !important;
         font-weight: 700;
+        font-size: 0.85rem !important;
         border: none;
-        padding: 0 16px;
+        padding: 0 4px !important;
     }
     .stTabs [aria-selected="true"] {
         background-color: #2563eb !important;
@@ -345,7 +350,7 @@ elif bulk_status["processed_days"] > 0 and bulk_status["processed_days"] == bulk
 
 
 # 🗂️ 3タブレイアウトの構築
-tab1, tab2, tab3 = st.tabs(["🎛️ ライブモニター", "🤖 AI制御・スケジュール", "🛡️ 寿命診断 ＆ 自給率分析"])
+tab1, tab2, tab3 = st.tabs(["🎛️ ライブ", "🤖 AI制御", "🛡️ 診断・分析"])
 
 # フラグメント更新関数 (ページ全体の暗転チラつきを完全排除してサイレント更新)
 @st.fragment(run_every=5 if auto_refresh else None)
@@ -816,15 +821,16 @@ with tab2:
         f"・**💰 31円利ざや売電 (〜{fit_end_formatted})**: 昼間(7-21時)は `0x43 (放電/売電優先)` で太陽光(31.0円/kWh)を全量売電！深夜16.3円との差額 `+14.7円/kWh` の純利益を追及！"
     )
     
-    # ⏰ 現在設定されている蓄電池の充放電時間帯可視化パネル
+    # ⏰ 現在設定されている蓄電池の充放電タイマー設定スケジュール
     st.markdown("#### ⏰ 現在の蓄電池 充放電タイマー設定スケジュール")
     st.markdown(
         """
-        | 時間帯区分 | 設定時刻窓 | 動作内容・電力料金単価 |
-        | :--- | :--- | :--- |
-        | **⚡ 深夜充電** | **`03:00` 〜 `06:30`** | 中部電力「夜とく」16.3円/kWh (JIT急速充電) |
-        | **🛡️ 保護バッファ** | **`06:30` 〜 `06:35`** | インバータ基板保護・待機時間 (5分間) |
-        | **🔋 昼間放電/売電** | **`06:35` 〜 `02:55`** | FIT高額売電 31.0円/kWh (または卒FIT自家消費) |
+        | タイマー設定項目 | 設定時間帯（時刻窓） | 運転制御モード | 動作詳細 ＆ 電力料金 |
+        | :--- | :--- | :--- | :--- |
+        | ⚡ **充電時間帯** | **`03:00` 〜 `06:30`** | `0x42` 充電モード | 中部電力「夜とく」16.30円/kWh でJIT急速充電 |
+        | 🛑 **充電停止時間** | **`06:30` 〜 `03:00`** | 充電OFF / 停止 | 03:00〜06:30 以外のすべての時間帯で充電動作を自動停止 |
+        | 🔋 **放電時間帯** | **`06:35` 〜 `21:00`** | `0x43` 放電/売電モード | 昼間自家消費 ＆ 31.0円/kWh 高額売電 (卒FIT後は自家消費) |
+        | ⏸️ **放電停止時間** | **`21:00` 〜 `07:00`** | `0x44` 待機 (放電OFF) | 夜間安価料金帯の放電停止ガード (系統電力を優先使用) |
         """
     )
     
