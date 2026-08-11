@@ -139,52 +139,65 @@ pv_est_val = 0
 load_est_val = 0
 reason_desc = "AI自動スケジュールが計算した最適値が適用されています。"
 
+latest_sched = get_latest_schedule()
+target_soc_val = 100
+pv_est_val = 0
+load_est_val = 0
+reason_desc = "AI自動スケジュールが計算した最適値が適用されています。"
+weather_icon = "⛅"
+fit_days_str = "あと 108 日"
+
 if latest_sched:
     target_soc_val = int(round(latest_sched.get('target_night_soc', 100)))
     pv_est_val = int(round(latest_sched.get('est_pv_kwh', 0)))
     load_est_val = int(round(latest_sched.get('est_load_kwh', 0)))
+    details = json.loads(latest_sched.get("details_json", "{}"))
     
-    if pv_est_val > 15:
-        reason_desc = (
-            f"翌日予想発電量 {pv_est_val}kWh。<br>"
-            f"十分な日照予測のため、深夜充電を {target_soc_val}% に抑制。<br>"
-            f"太陽光余剰充電枠を確保。"
-        )
-    elif pv_est_val < 5:
-        reason_desc = (
-            f"翌日予想発電量 {pv_est_val}kWh。<br>"
-            f"日中の不足電力を補うため、深夜最安料金帯に {target_soc_val}% 急速充電。<br>"
-            f"昼間の買電量を最小化。"
-        )
+    fit_days = details.get("days_until_fit_end", 108)
+    fit_days_str = f"あと {fit_days} 日" if fit_days > 0 else "卒FIT運用中"
+    
+    weather_cond = details.get("weather_condition", "cloudy")
+    if weather_cond == "clear":
+        weather_icon = "☀️ 快晴"
+    elif weather_cond == "rainy":
+        weather_icon = "🌧️ 雨天"
+    elif weather_cond == "storm":
+        weather_icon = "⚡ 警報/台風"
     else:
-        reason_desc = (
-            f"翌日予想発電量 {pv_est_val}kWh、予想消費量 {load_est_val}kWh。<br>"
-            f"充放電バランスと経済効果を最大化する深夜充電目標 {target_soc_val}% を算定。"
-        )
+        weather_icon = "⛅ 曇り/標準"
+        
+    reason_desc = details.get("recommendation_reason", reason_desc)
 
 st.markdown(
     f"""
-    <div class="glass-card" style="padding: 10px 14px; margin-bottom: 12px; border-color: rgba(59, 130, 246, 0.3); background: rgba(15, 23, 42, 0.75);">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-            <span style="color:#60a5fa; font-weight:800; font-size:0.9rem;">🤖 AI最適化予測・充電計画</span>
-            <span style="font-size:0.75rem; background:#1e3a8a; padding:2px 8px; border-radius:4px; color:#93c5fd; font-weight:700; border:1px solid #3b82f6;">v2.4 OS</span>
-        </div>
-        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px; margin-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:6px; text-align:center;">
+    <div class="glass-card" style="padding: 12px 16px; margin-bottom: 14px; border-color: rgba(59, 130, 246, 0.35); background: rgba(15, 23, 42, 0.85);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <span style="color:#60a5fa; font-weight:800; font-size:0.95rem;">🤖 天気予報連動 AI最適化充電計画</span>
             <div>
-                <div style="font-size:0.7rem; color:#cbd5e1;">今夜の目標SOC</div>
-                <div style="font-size:1.2rem; font-weight:900; color:#34d399;">{target_soc_val} %</div>
-            </div>
-            <div>
-                <div style="font-size:0.7rem; color:#cbd5e1;">翌日予想発電</div>
-                <div style="font-size:1.2rem; font-weight:900; color:#fbbf24;">{pv_est_val} kWh</div>
-            </div>
-            <div>
-                <div style="font-size:0.7rem; color:#cbd5e1;">翌日予想消費</div>
-                <div style="font-size:1.2rem; font-weight:900; color:#60a5fa;">{load_est_val} kWh</div>
+                <span style="font-size:0.72rem; background:#065f46; padding:2px 8px; border-radius:4px; color:#34d399; font-weight:800; margin-right:4px;">💰 FIT売電 {fit_days_str}</span>
+                <span style="font-size:0.72rem; background:#1e3a8a; padding:2px 8px; border-radius:4px; color:#93c5fd; font-weight:800; border:1px solid #3b82f6;">v3.0 AI OS</span>
             </div>
         </div>
-        <div style="font-size:0.78rem; color:#ffffff; line-height:1.45; font-weight:600;">
-            {reason_desc}
+        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap:8px; margin-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:8px; text-align:center;">
+            <div>
+                <div style="font-size:0.7rem; color:#cbd5e1;">目標深夜充電</div>
+                <div style="font-size:1.3rem; font-weight:900; color:#34d399;">{target_soc_val} %</div>
+            </div>
+            <div>
+                <div style="font-size:0.7rem; color:#cbd5e1;">翌日気象</div>
+                <div style="font-size:1.05rem; font-weight:900; color:#f59e0b;">{weather_icon}</div>
+            </div>
+            <div>
+                <div style="font-size:0.7rem; color:#cbd5e1;">予想発電</div>
+                <div style="font-size:1.3rem; font-weight:900; color:#fbbf24;">{pv_est_val} <span style="font-size:0.75rem;">kWh</span></div>
+            </div>
+            <div>
+                <div style="font-size:0.7rem; color:#cbd5e1;">予想消費</div>
+                <div style="font-size:1.3rem; font-weight:900; color:#60a5fa;">{load_est_val} <span style="font-size:0.75rem;">kWh</span></div>
+            </div>
+        </div>
+        <div style="font-size:0.8rem; color:#f8fafc; line-height:1.45; font-weight:600; background:rgba(30,41,59,0.6); padding:6px 10px; border-radius:8px; border-left:3px solid #3b82f6;">
+            💡 <strong>AI判定根拠</strong>: {reason_desc}
         </div>
     </div>
     """,
