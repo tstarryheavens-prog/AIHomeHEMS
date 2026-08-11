@@ -451,7 +451,10 @@ def render_tab1_live():
             else:
                 sched_desc = f"⏸️ 夜間待機中 (系統電力優先買電 / 蓄電池放電停止ガード 0x44) [21:00-07:00]"
         else:
-            sched_desc = f"💰 昼間自動運転中 (太陽光自家消費/売電優先) [07:00-21:00]"
+            if is_fit_active_live:
+                sched_desc = f"💰 昼間自家消費・売電最大化中 (31.0円売電 / PV0W時蓄電池放電カバー 0x43) [07:00-21:00]"
+            else:
+                sched_desc = f"🌿 昼間ピークカット自家消費中 (高額買電回避 / 蓄電池優先放電 0x43/0x45) [07:00-21:00]"
 
     st.markdown(
         f"""
