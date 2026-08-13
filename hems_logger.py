@@ -150,26 +150,11 @@ def check_and_apply_time_based_battery_schedule(client, config=None):
                     target_mode = 0x44
             else:
                 # 昼間時間帯 (07:00〜21:00) の制御
-                # 💡 昼間に太陽光が0Wまたは不足している場合、高額な昼間買電(36.00円/kWh)を回避するため、
-                # 蓄電池から自前放電 (0x43 放電優先 モード / または 0x45 自家消費) させて電気代を最小化します。
-                if is_fit_active:
-                    # FIT期間中: 昼間は0x43 (放電/売電優先)。太陽光が0Wになっても蓄電池から宅内へ放電され、36.00円のデイタイム買電を完全ブロック。
-                    target_mode = 0x43
-                else:
-                    # 卒FIT後: 昼間は0x45 (自家消費・グリーン) またはPV不足時0x43。
-                    # PV発電が宅内消費を下回る場合、確実に蓄電池から放電させるため0x43を適用。
-                    latest_pv_w = 0
-                    try:
-                        latest_info = client.get_full_system_info()
-                        latest_pv_w = latest_info.get("pv_w", 0)
-                    except Exception:
-                        pass
-                    
-                    if latest_pv_w < 100:
-                        # 太陽光が0Wまたはわずかな場合、放電モード(0x43)を明示指定して確実に蓄電池から宅内負荷へ給電
-                        target_mode = 0x43
-                    else:
-                        target_mode = 0x45 # 自家消費・グリーンモード
+                # 💡 買電極小化原則:
+                # 昼間時間帯に太陽光が0Wまたは宅内消費を下回っている場合、
+                # 高額な昼間買電(36.00円/kWh)を完全に回避するため、確実に 0x43 (放電/自家消費優先モード) をセットし、
+                # 蓄電池から自前で宅内負荷へ無条件放電させて買電を最小化します。
+                target_mode = 0x43
 
         # 🛑 昼間充電の完全禁止ガード (フェイルセーフの徹底)
         # 昼間 (07:00〜23:00) 帯に、Storm Watch警報が出ておらず手動介入でもない通常状態の場合、
