@@ -140,27 +140,38 @@ def check_and_apply_time_based_battery_schedule(client, config=None):
                 # AI予測スケジュールが取得できなかった場合の安全デフォルト（FIT期間中は100%充電、卒FIT後は50%充電）
                 target_soc = 100.0 if is_fit_active else 50.0
 
-            # 夜間電力時間帯(21:00〜07:00)の制御
+            # 時間帯およびFIT条件に応じた制御アルゴリズム
             if is_yorytoku_night:
                 if is_jit_charge_time and target_soc > 50:
                     target_mode = 0x42 # 深夜JIT急速充電モード (03:00〜06:30)
                 else:
-                    # 💡 深夜料金時間帯は放電せず、系統からの安い電気の購入を優先するため
-                    # 蓄電池を「0x44 (待機)」モードにして放電を完全に停止します。
+                    # 💡 深夜料金時間帯 (21:00〜03:00 / 06:30〜07:00)
+                    # 深夜の最安買電(16.30円/kWh)を優先使用し、蓄電池は「0x44 (待機)」で放電ガード
                     target_mode = 0x44
             else:
-                # 昼間時間帯 (07:00〜21:00) の制御
-                # 💡 買電極小化原則:
-                # 昼間時間帯に太陽光が0Wまたは宅内消費を下回っている場合、
-                # 高額な昼間買電(36.00円/kWh)を完全に回避するため、確実に 0x43 (放電/自家消費優先モード) をセットし、
-                # 蓄電池から自前で宅内負荷へ無条件放電させて買電を最小化します。
-                target_mode = 0x43
+                # ☀️ 昼間〜夕方時間帯 (07:00〜21:00) の収益最大化制御
+                if is_fit_active:
+                    # 💰 FIT期間中 (〜2026/11/27: 売電31.0円/kWh > 深夜買電16.3円)
+                    # 17:00〜21:00 の夕方ピーク帯は「夕方売電スパート」を実施。
+                    # 深夜充電(21時)に突入する前に、使いきれていない蓄電池余剰電力を31.0円/kWhで売電・自家消費に放電し尽くす (0x43)
+                    target_mode = 0x43
+                else:
+                    # 🌿 卒FIT後 (2026/11/28〜: 昼間買電36円 > 深夜買電16.3円 > 売電8.5円)
+                    # 8.5円での安売り売電を回避し、昼間〜夕方の買電(36円)を完全カット。
+                    # 余剰電力は売電せず蓄電池に貯め込んで自家消費優先 (0x45 自家消費/グリーン)
+                    # 太陽光が0Wまたは不足時のみ 0x43 を発行して自家消費放電を補償。
+                    latest_pv_w = 0
+                    try:
+                        latest_info = client.get_full_system_info()
+                        latest_pv_w = latest_info.get("pv_w", 0)
+                    except Exception:
+                        pass
+                    
+                    target_mode = 0x43 if latest_pv_w < 100 else 0x45
 
         # 🛑 昼間充電の完全禁止ガード (フェイルセーフの徹底)
-        # 昼間 (07:00〜23:00) 帯に、Storm Watch警報が出ておらず手動介入でもない通常状態の場合、
-        # 意図しないバグや狂ったAI計画により 0x42 (急速充電) に切り替わることを強制ロックアウトします。
         if is_daytime and not has_storm_warning and override_mode is None and target_mode == 0x42:
-            print("[HEMSLogger] Warning: Prevented illegal DAYTIME charge (0x42) schedule! Fallback to AUTO/GREEN.")
+            print("[HEMSLogger] Warning: Prevented illegal DAYTIME charge (0x42) schedule! Fallback to DISCHARGE.")
             target_mode = 0x43
 
     except Exception as e:
