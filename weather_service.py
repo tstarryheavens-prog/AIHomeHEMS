@@ -4,12 +4,21 @@ from datetime import datetime, date
 
 class WeatherService:
     def __init__(self, config_path="config.yaml"):
-        with open(config_path, "r", encoding="utf-8") as f:
-            self.config = yaml.safe_load(f)
-        self.lat = self.config["location"]["latitude"]
-        self.lon = self.config["location"]["longitude"]
-        self.pv_capacity_kw = self.config["system"]["pv_capacity_kw"]
-        self.pv_efficiency = self.config["system"]["pv_efficiency"]
+        import os
+        if os.path.isdir(config_path):
+            config_path = os.path.join(config_path, "config.yaml") if os.path.exists(os.path.join(config_path, "config.yaml")) else "config.yaml"
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                self.config = yaml.safe_load(f) or {}
+        except Exception:
+            self.config = {}
+        
+        loc = self.config.get("location", {})
+        sys_cfg = self.config.get("system", {})
+        self.lat = loc.get("latitude", 35.1206)
+        self.lon = loc.get("longitude", 136.9092)
+        self.pv_capacity_kw = sys_cfg.get("pv_capacity_kw", 4.0)
+        self.pv_efficiency = sys_cfg.get("pv_efficiency", 0.85)
 
     def fetch_forecast(self):
         """

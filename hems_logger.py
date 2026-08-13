@@ -229,8 +229,13 @@ def poll_and_log_all_data(config_path="config.yaml"):
     """
     init_csv_log()
     
-    with open(config_path, "r", encoding="utf-8") as f:
-        config = yaml.safe_load(f)
+    if os.path.isdir(config_path):
+        config_path = os.path.join(config_path, "config.yaml") if os.path.exists(os.path.join(config_path, "config.yaml")) else "config.yaml"
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = yaml.safe_load(f) or {}
+    except Exception:
+        config = {}
         
     nichicon_ip = config.get("nichicon", {}).get("ip_address", "192.168.2.12")
     nichicon_port = config.get("nichicon", {}).get("port", 3610)

@@ -6,21 +6,19 @@ from datetime import date, timedelta
 
 class PostFitOptimizer:
     def __init__(self, config_path="config.yaml"):
-        with open(config_path, "r", encoding="utf-8") as f:
-            self.config = yaml.safe_load(f)
+        import os
+        if os.path.isdir(config_path):
+            config_path = os.path.join(config_path, "config.yaml") if os.path.exists(os.path.join(config_path, "config.yaml")) else "config.yaml"
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                self.config = yaml.safe_load(f) or {}
+        except Exception:
+            self.config = {}
         self.weather_service = WeatherService(config_path)
-        self.battery_capacity_kwh = self.config["system"]["battery_capacity_kwh"]
-        self.min_soc = self.config["system"]["battery_min_soc"]
-        self.max_soc = self.config["system"]["battery_max_soc"]
-
-class PostFitOptimizer:
-    def __init__(self, config_path="config.yaml"):
-        with open(config_path, "r", encoding="utf-8") as f:
-            self.config = yaml.safe_load(f)
-        self.weather_service = WeatherService(config_path)
-        self.battery_capacity_kwh = self.config["system"]["battery_capacity_kwh"]
-        self.min_soc = self.config["system"]["battery_min_soc"]
-        self.max_soc = self.config["system"]["battery_max_soc"]
+        sys_cfg = self.config.get("system", {})
+        self.battery_capacity_kwh = sys_cfg.get("battery_capacity_kwh", 14.9)
+        self.min_soc = sys_cfg.get("battery_min_soc", 20.0)
+        self.max_soc = sys_cfg.get("battery_max_soc", 100.0)
 
     def calculate_optimal_schedule(self):
         """
