@@ -1115,55 +1115,59 @@ with tab3:
                 label_visibility="collapsed"
             )
         
-        # 1. hems_daily_history からデータを取得
-        h_daily = get_hems_daily_history(limit=daily_range_days, filter_zero=False)
+        # 1. hems_daily_history から最新データを取得
+        h_daily = get_hems_daily_history(limit=daily_range_days * 2, filter_zero=False)
+        daily_dict = {r["date_str"]: r for r in h_daily} if h_daily else {}
         
-        # 2. もし hems_daily_history にデータがない場合、telemetry から日別集計を自動生成
-        if not h_daily:
-            with get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute('''
-                    SELECT 
-                        date(timestamp) as date_str,
-                        SUM(pv_w * 30.0 / 3600.0 / 1000.0) as pv_kwh,
-                        SUM(CASE WHEN grid_w > 0 THEN grid_w * 30.0 / 3600.0 / 1000.0 ELSE 0 END) as buy_kwh,
-                        SUM(CASE WHEN grid_w < 0 THEN -grid_w * 30.0 / 3600.0 / 1000.0 ELSE 0 END) as sale_kwh,
-                        SUM(CASE WHEN battery_w < 0 THEN -battery_w * 30.0 / 3600.0 / 1000.0 ELSE 0 END) as bat_dis_kwh
-                    FROM telemetry
-                    WHERE timestamp >= datetime('now', '-' || ? || ' days')
-                    GROUP BY date_str
-                    ORDER BY date_str ASC
-                ''', (daily_range_days,))
-                t_daily_rows = cursor.fetchall()
-                if t_daily_rows:
-                    h_daily = []
-                    for r in t_daily_rows:
-                        row_dict = dict(r)
-                        pv_val = row_dict.get("pv_kwh", 0) or 0
-                        buy_val = row_dict.get("buy_kwh", 0) or 0
-                        sale_val = row_dict.get("sale_kwh", 0) or 0
-                        bat_val = row_dict.get("bat_dis_kwh", 0) or 0
-                        
-                        # 自家消費 = 太陽光からの直接消費 + 蓄電池からの放電給電
-                        self_val = max(0.0, pv_val - sale_val + bat_val)
-                        load_val = self_val + buy_val
-                        
-                        h_daily.append({
-                            "date_str": row_dict["date_str"],
-                            "load_kwh": load_val,
-                            "buy_kwh": buy_val,
-                            "sale_kwh": sale_val,
-                            "self_kwh": self_val,
-                            "cost_yen": int(buy_val * 31.0)
-                        })
-                        
-        if h_daily:
-            df_daily_h = pd.DataFrame(h_daily)
+        # 2. telemetry から直近N日間のリアルタイム集計を算出し、補完・マージする
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT 
+                    date(timestamp) as date_str,
+                    SUM(pv_w * 30.0 / 3600.0 / 1000.0) as pv_kwh,
+                    SUM(CASE WHEN grid_w > 0 THEN grid_w * 30.0 / 3600.0 / 1000.0 ELSE 0 END) as buy_kwh,
+                    SUM(CASE WHEN grid_w < 0 THEN -grid_w * 30.0 / 3600.0 / 1000.0 ELSE 0 END) as sale_kwh,
+                    SUM(CASE WHEN battery_w < 0 THEN -battery_w * 30.0 / 3600.0 / 1000.0 ELSE 0 END) as bat_dis_kwh
+                FROM telemetry
+                WHERE timestamp >= datetime('now', '-' || ? || ' days')
+                GROUP BY date_str
+                ORDER BY date_str ASC
+            ''', (daily_range_days,))
+            t_daily_rows = cursor.fetchall()
+            
+            for r in t_daily_rows:
+                row_dict = dict(r)
+                d_str = row_dict["date_str"]
+                if not d_str:
+                    continue
+                pv_val = row_dict.get("pv_kwh", 0) or 0
+                buy_val = row_dict.get("buy_kwh", 0) or 0
+                sale_val = row_dict.get("sale_kwh", 0) or 0
+                bat_val = row_dict.get("bat_dis_kwh", 0) or 0
+                
+                self_val = max(0.0, pv_val - sale_val + bat_val)
+                load_val = self_val + buy_val
+                
+                # telemetryのリアルタイム集計で上書き・補完
+                daily_dict[d_str] = {
+                    "date_str": d_str,
+                    "load_kwh": load_val,
+                    "buy_kwh": buy_val,
+                    "sale_kwh": sale_val,
+                    "self_kwh": self_val,
+                    "cost_yen": int(buy_val * 31.0)
+                }
+                
+        h_daily_list = list(daily_dict.values())
+        if h_daily_list:
+            df_daily_h = pd.DataFrame(h_daily_list)
             df_daily_h = df_daily_h.sort_values("date_str")
             
             # 直近N日間にフィルタリング
-            if len(df_daily_h) > daily_range_days:
-                df_daily_h = df_daily_h.tail(daily_range_days)
+            max_d_ts = pd.to_datetime(df_daily_h["date_str"]).max()
+            min_d_cutoff = (max_d_ts - pd.Timedelta(days=daily_range_days-1)).strftime("%Y-%m-%d")
+            df_daily_h = df_daily_h[df_daily_h["date_str"] >= min_d_cutoff]
             
             # 自家消費kWh = 全負荷 - 買電 (または self_kwh)
             df_daily_h["自家消費_kwh"] = df_daily_h.apply(
