@@ -610,9 +610,9 @@ def render_tab1_live():
     components.html(html_hems_flow, height=230)
 
     # ==========================================
-    # 📈 全電力トレンド推移 (スマホバグ出し用に上部配置)
+    # 📈 全電力トレンド推移
     # ==========================================
-    st.markdown("##### 📈 全電力トレンド推移 (過去48時間等)")
+    st.markdown("##### 📈 全電力トレンド推移")
     
     # 1. グラフ用の描画エリアを先に定義（表示が上になる）
     chart_area = st.container()
@@ -676,6 +676,10 @@ def render_tab1_live():
             
             def draw_altair_chart_compact(df, y_cols, y_label):
                 df_reset = df.reset_index()
+                min_t = df_reset["timestamp"].min()
+                max_t = df_reset["timestamp"].max()
+                x_scale = alt.Scale(domain=[min_t, max_t])
+                
                 rename_dict = {
                     "pv_w": "太陽光発電 (W)",
                     "grid_w": "買電/売電 (W)",
@@ -702,7 +706,7 @@ def render_tab1_live():
                     # 1. 電力用 (左軸 - W)
                     df_melt_pow = df_plot_renamed.melt("timestamp", value_vars=plot_power_cols, var_name="指標", value_name="電力")
                     power_chart = alt.Chart(df_melt_pow).mark_line(interpolate='monotone', strokeWidth=1.5).encode(
-                        x=alt.X('timestamp:T', title=None, axis=alt.Axis(format='%m/%d %H:%M', grid=True, gridColor=grid_color, labelColor=text_color)),
+                        x=alt.X('timestamp:T', title=None, scale=x_scale, axis=alt.Axis(format='%m/%d %H:%M', grid=True, gridColor=grid_color, labelColor=text_color)),
                         y=alt.Y('電力:Q', title='電力 (W)', axis=alt.Axis(grid=True, gridColor=grid_color, labelColor=text_color, titleColor=text_color)),
                         color=alt.Color('指標:N', scale=color_scale, legend=alt.Legend(title=None, labelColor=text_color, direction='horizontal', orient='bottom'))
                     )
@@ -710,7 +714,7 @@ def render_tab1_live():
                     # 2. SOC用 (右軸 - %)
                     df_melt_soc = df_plot_renamed.melt("timestamp", value_vars=["蓄電池 SOC (%)"], var_name="指標", value_name="残量")
                     soc_chart = alt.Chart(df_melt_soc).mark_line(interpolate='monotone', strokeWidth=2.2, strokeDash=[4, 3]).encode(
-                        x=alt.X('timestamp:T'),
+                        x=alt.X('timestamp:T', scale=x_scale),
                         y=alt.Y('残量:Q', title='残量 (%)', scale=alt.Scale(domain=[0, 100]), axis=alt.Axis(grid=False, labelColor='#10b981', titleColor='#10b981')),
                         color=alt.Color('指標:N', scale=color_scale, legend=alt.Legend(title=None, labelColor=text_color, direction='horizontal', orient='bottom'))
                     )
@@ -731,7 +735,7 @@ def render_tab1_live():
                     df_melt = df_plot_renamed.melt("timestamp", value_vars=plot_cols, var_name="指標", value_name="値")
                     
                     chart = alt.Chart(df_melt).mark_line(interpolate='monotone', strokeWidth=1.5).encode(
-                        x=alt.X('timestamp:T', title=None, axis=alt.Axis(format='%m/%d %H:%M', grid=True, gridColor=grid_color, labelColor=text_color)),
+                        x=alt.X('timestamp:T', title=None, scale=x_scale, axis=alt.Axis(format='%m/%d %H:%M', grid=True, gridColor=grid_color, labelColor=text_color)),
                         y=alt.Y('値:Q', title=y_label, axis=alt.Axis(grid=True, gridColor=grid_color, labelColor=text_color, titleColor=text_color)),
                         color=alt.Color('指標:N', scale=color_scale, legend=alt.Legend(title=None, labelColor=text_color, direction='horizontal', orient='bottom')),
                         tooltip=[
