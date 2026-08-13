@@ -159,10 +159,12 @@ def get_hems_daily_history(limit=500, filter_zero=True):
     with get_connection() as conn:
         cursor = conn.cursor()
         if filter_zero:
-            cursor.execute("SELECT * FROM hems_daily_history WHERE cost_yen > 0 ORDER BY date_str ASC LIMIT ?", (limit,))
+            cursor.execute("SELECT * FROM hems_daily_history WHERE cost_yen > 0 ORDER BY date_str DESC LIMIT ?", (limit,))
         else:
-            cursor.execute("SELECT * FROM hems_daily_history ORDER BY date_str ASC LIMIT ?", (limit,))
-        return [dict(row) for row in cursor.fetchall()]
+            cursor.execute("SELECT * FROM hems_daily_history ORDER BY date_str DESC LIMIT ?", (limit,))
+        rows = cursor.fetchall()
+        # 最新の日付をLIMIT件取得したあと、時系列順(昇順)にソートして返す
+        return [dict(row) for row in reversed(rows)]
 
 def get_recent_room_telemetry(limit=50):
     with get_connection() as conn:
