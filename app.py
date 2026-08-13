@@ -993,11 +993,16 @@ with tab2:
 
 with tab3:
     try:
-        st.markdown("#### 🛡️ 蓄電池寿命診断 ＆ 自給率分析")
+        st.markdown("### 📊 HEMS ＆ 過去ログ 多角的エネルギー高度分析")
         
-        from database import get_battery_health_metrics, get_self_sufficiency_data
-        import random
+        from database import get_battery_health_metrics, get_self_sufficiency_data, get_connection
+        from hems_monthly_importer import get_hems_monthly_history
+        from katene_importer import import_katene_csv
+        import altair as alt
         
+        # ----------------------------------------------------
+        # 1. 最上段：蓄電池 SOH ＆ 経済効果サマリー
+        # ----------------------------------------------------
         health = get_battery_health_metrics()
         self_suff = get_self_sufficiency_data()
         
@@ -1014,74 +1019,203 @@ with tab3:
             total_cycles = (cum_charge_kwh + cum_discharge_kwh) / 2.0 / 11.1
         else:
             total_cycles = health.get('total_telemetry_days', 30) * 0.75
-            
         total_cycles = max(12.0, total_cycles)
         
         calendar_loss = health.get('total_telemetry_days', 30) * (3.0 / 365.0)
         cycle_loss = total_cycles * 0.005
         est_soh = max(70.0, min(100.0, 99.4 - calendar_loss - cycle_loss))
         
-        h_col1, h_col2, h_col3 = st.columns(3)
-        with h_col1:
-            st.metric("🩺 SOH (健康度)", f"{est_soh:.1f} %", help="出荷時を100%とした時の現在の容量維持率の推定値")
-        with h_col2:
-            st.metric("🔄 総サイクル数", f"{int(round(total_cycles)):,} 回", help="定格容量分の充放電を1サイクルとした総カウント数")
-        with h_col3:
-            st.metric("🛡️ JIT保護スコア", f"{health.get('life_protection_score', 98)} 点", help="AI満充電放置時間の削減実績に基づく保護スコア")
+        avg_self_suff_pct = self_suff.get("average_percent", 68.5)
+        
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("⚡ 平均エネルギー自給率", f"{avg_self_suff_pct:.1f} %", help="太陽光＋蓄電池で家庭内消費をまかなえた割合")
+        m2.metric("🩺 蓄電池 SOH (健康度)", f"{est_soh:.1f} %", help="初期容量に対する維持率")
+        m3.metric("🔄 累計充放電サイクル", f"{int(round(total_cycles)):,} 回")
+        m4.metric("🛡️ 寿命保護スコア", f"{health.get('life_protection_score', 98)} 点", help="100点満点")
+        
+        st.divider()
 
-        # 経済効果 ＆ エコ貢献度統計
-        h_history_30 = get_hems_daily_history(limit=30, filter_zero=True)
-        if not h_history_30:
-            h_history_30 = [
-                {"buy_kwh": random.uniform(5, 12), "sale_kwh": random.uniform(8, 22), "pv_kwh": random.uniform(14, 25), "self_kwh": random.uniform(6, 15), "cost_yen": random.randint(150, 450)}
-                for _ in range(30)
-            ]
+        # ----------------------------------------------------
+        # 2. 24時間 1時間ごと時間帯別電力消費パターン (時間帯別ヒートマップ/バー)
+        # ----------------------------------------------------
+        st.markdown("##### 🕒 時間帯別(0時〜23時) 平均消費電力パターン分析")
+        st.caption("※ 過去ログから家庭内で電気を多く使っている「時間帯の癖」を可視化します。")
+        
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT 
+                    CAST(strftime('%H', timestamp) AS INTEGER) as hour_num,
+                    AVG(pv_w) as avg_pv,
+                    AVG(grid_w) as avg_grid,
+                    AVG(CASE WHEN grid_w > 0 THEN grid_w ELSE 0 END) as avg_buy,
+                    AVG(CASE WHEN battery_w < 0 THEN -battery_w ELSE 0 END) as avg_bat_dis
+                FROM telemetry
+                GROUP BY hour_num
+                ORDER BY hour_num ASC
+            ''')
+            hourly_rows = cursor.fetchall()
             
-        self_kwh_sum = sum([r.get("self_kwh", 0) or 0 for r in h_history_30])
-        buy_kwh_sum = sum([r.get("buy_kwh", 0) or 0 for r in h_history_30])
-        sale_kwh_sum = sum([r.get("sale_kwh", 0) or 0 for r in h_history_30])
-        
-        co2_kg = self_kwh_sum * 0.435
-        sugi_trees = co2_kg / 14.0
-        
-        from datetime import datetime, timezone, timedelta
-        JST = timezone(timedelta(hours=9))
-        now_dt_check = datetime.now(JST)
-        fit_end_str_check = config.get("fit_setting", {}).get("fit_end_date", "2026-11-27")
-        try:
-            fit_end_date_check = datetime.strptime(fit_end_str_check, "%Y-%m-%d").date()
-        except Exception:
-            fit_end_date_check = datetime(2026, 11, 27).date()
-        fit_end_check = datetime(fit_end_date_check.year, fit_end_date_check.month, fit_end_date_check.day, 23, 59, 59, tzinfo=JST)
-        is_fit_active_check = (now_dt_check <= fit_end_check)
+        if hourly_rows:
+            df_hourly = pd.DataFrame([dict(r) for r in hourly_rows])
+            df_hourly["hour_str"] = df_hourly["hour_num"].apply(lambda h: f"{h:02d}時")
+            
+            df_hourly_melt = df_hourly.melt(
+                id_vars=["hour_str", "hour_num"],
+                value_vars=["avg_pv", "avg_buy", "avg_bat_dis"],
+                var_name="種別",
+                value_name="平均電力W"
+            )
+            
+            label_map_h = {
+                "avg_pv": "☀️ 太陽光発電 (W)",
+                "avg_buy": "🔴 系統買電 (W)",
+                "avg_bat_dis": "🔋 蓄電池放電 (W)"
+            }
+            df_hourly_melt["種別"] = df_hourly_melt["種別"].map(label_map_h)
+            
+            chart_hourly = alt.Chart(df_hourly_melt).mark_bar(opacity=0.85).encode(
+                x=alt.X('hour_str:N', title=None, sort=alt.SortField('hour_num', order='ascending'), axis=alt.Axis(labelAngle=0, labelColor='#cbd5e1')),
+                y=alt.Y('平均電力W:Q', title='平均電力 (W)', axis=alt.Axis(grid=True, gridColor='rgba(255,255,255,0.06)', labelColor='#cbd5e1')),
+                color=alt.Color('種別:N', scale=alt.Scale(
+                    domain=["☀️ 太陽光発電 (W)", "🔴 系統買電 (W)", "🔋 蓄電池放電 (W)"],
+                    range=["#fbbf24", "#ef4444", "#38bdf8"]
+                ), legend=alt.Legend(orient='top', title=None, labelColor='#e2e8f0')),
+                tooltip=[
+                    alt.Tooltip('hour_str:N', title='時間帯'),
+                    alt.Tooltip('種別:N', title='区分'),
+                    alt.Tooltip('平均電力W:Q', title='平均電力 (W)', format=',.0f')
+                ]
+            ).properties(
+                height=200
+            ).configure_view(
+                strokeOpacity=0
+            ).configure(
+                background='transparent'
+            )
+            st.altair_chart(chart_hourly, use_container_width=True)
+        else:
+            st.info("📊 リアルタイムログ蓄積中... 十分なログが集まると時間帯別パターンが表示されます。")
 
-        solar_savings = self_kwh_sum * 36.0
-        arbitrage_savings = (buy_kwh_sum * 0.8) * (31.0 - 16.30) if is_fit_active_check else 0
-        total_savings = solar_savings + arbitrage_savings
+        st.divider()
 
-        st.markdown("##### 🌲 直近30日間のエネマネ削減実績")
-        eco_col1, eco_col2, eco_col3 = st.columns(3)
-        with eco_col1:
-            st.metric("💰 削減金額", f"¥{int(round(total_savings)):,}")
-        with eco_col2:
-            st.metric("📉 CO2削減", f"{co2_kg:.0f} kg")
-        with eco_col3:
-            st.metric("🌲 杉の木換算", f"{sugi_trees:.1f} 本")
-
-        saved_hrs = health.get('saved_hours_per_day', 4.5)
-        st.markdown(
-            f"""
-            <div class="glass-card" style="padding: 10px 14px; margin-top: 8px; margin-bottom: 12px;">
-                <div style="font-size:0.8rem; font-weight:800; color:#60a5fa; margin-bottom:4px;">📊 蓄電池JIT延命・保護レポート</div>
-                <div style="font-size:0.75rem; color:#f8fafc; line-height:1.4;">
-                    朝の利用直前急速充電により1日平均 <strong>{saved_hrs} 時間</strong> の満充電放置時間を削減。<br>
-                    <span style="color: #94a3b8; font-size:0.7rem;">※ 蓄電池寿命最得制御適用中</span>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        # ----------------------------------------------------
+        # 3. 日別収支・エネルギー積算グラフ (積層バー / 買電 vs 自家消費 vs 売電)
+        # ----------------------------------------------------
+        st.markdown("##### 📅 日別エネルギー収支 ＆ 電力量推移 (kWh)")
         
+        h_daily = get_hems_daily_history(limit=30, filter_zero=True)
+        if h_daily:
+            df_daily_h = pd.DataFrame(h_daily)
+            
+            # 日付順ソート
+            df_daily_h = df_daily_h.sort_values("date_str")
+            
+            # 自家消費kWh = 全負荷 - 買電 (または self_kwh)
+            df_daily_h["自家消費_kwh"] = df_daily_h.apply(
+                lambda r: max(0.0, (r.get("self_kwh", 0) or (r.get("load_kwh", 0) - r.get("buy_kwh", 0)))), axis=1
+            )
+            df_daily_h["買電_kwh"] = df_daily_h["buy_kwh"].fillna(0)
+            df_daily_h["売電_kwh"] = df_daily_h["sale_kwh"].fillna(0)
+            
+            # 積層グラフ用
+            df_stack = df_daily_h.melt(
+                id_vars=["date_str"],
+                value_vars=["自家消費_kwh", "買電_kwh", "売電_kwh"],
+                var_name="区分",
+                value_name="電力量kWh"
+            )
+            
+            label_map_d = {
+                "自家消費_kwh": "🌿 自家消費 (太陽光+蓄電池)",
+                "買電_kwh": "🔴 系統買電",
+                "売電_kwh": "💰 系統売電"
+            }
+            df_stack["区分"] = df_stack["区分"].map(label_map_d)
+            
+            chart_stack = alt.Chart(df_stack).mark_bar().encode(
+                x=alt.X('date_str:N', title=None, axis=alt.Axis(labelAngle=-45, labelColor='#cbd5e1')),
+                y=alt.Y('電力量kWh:Q', title='電力量 (kWh)', axis=alt.Axis(grid=True, gridColor='rgba(255,255,255,0.06)', labelColor='#cbd5e1')),
+                color=alt.Color('区分:N', scale=alt.Scale(
+                    domain=["🌿 自家消費 (太陽光+蓄電池)", "🔴 系統買電", "💰 系統売電"],
+                    range=["#10b981", "#ef4444", "#fbbf24"]
+                ), legend=alt.Legend(orient='top', title=None, labelColor='#e2e8f0')),
+                tooltip=[
+                    alt.Tooltip('date_str:N', title='日付'),
+                    alt.Tooltip('区分:N', title='区分'),
+                    alt.Tooltip('電力量kWh:Q', title='電力量 (kWh)', format='.1f')
+                ]
+            ).properties(
+                height=220
+            ).configure_view(
+                strokeOpacity=0
+            ).configure(
+                background='transparent'
+            )
+            st.altair_chart(chart_stack, use_container_width=True)
+        else:
+            st.info("📅 日別履歴データ集計中...")
+
+        st.divider()
+
+        # ----------------------------------------------------
+        # 4. 長期月別電力実績 ＆ 外部CSVインポート
+        # ----------------------------------------------------
+        st.markdown("##### 🗓️ 月別電気代 ＆ 自給率推移 (HEMS過去ログ・カテエネ連携)")
+        
+        tab_sub1, tab_sub2 = st.tabs(["📊 月別実績グラフ", "📁 CSV手動インポート"])
+        
+        with tab_sub1:
+            with get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='hems_monthly_history'")
+                has_m_table = cursor.fetchone()
+                
+                if has_m_table:
+                    cursor.execute("SELECT * FROM hems_monthly_history ORDER BY year_month ASC")
+                    m_rows = cursor.fetchall()
+                else:
+                    m_rows = []
+                    
+            if m_rows:
+                df_m = pd.DataFrame([dict(r) for r in m_rows])
+                
+                c_m1 = alt.Chart(df_m).mark_bar(color='#60a5fa', opacity=0.8).encode(
+                    x=alt.X('year_month:N', title=None, axis=alt.Axis(labelAngle=-45, labelColor='#cbd5e1')),
+                    y=alt.Y('cost_yen:Q', title='電気代 (円)', axis=alt.Axis(grid=True, gridColor='rgba(255,255,255,0.06)', labelColor='#cbd5e1')),
+                    tooltip=[
+                        alt.Tooltip('year_month:N', title='年月'),
+                        alt.Tooltip('cost_yen:Q', title='電気代 (円)', format=',.0f')
+                    ]
+                ).properties(
+                    height=200
+                ).configure_view(
+                    strokeOpacity=0
+                ).configure(
+                    background='transparent'
+                )
+                st.altair_chart(c_m1, use_container_width=True)
+            else:
+                st.info("💡 下記の「CSV手動インポート」タブから中部電力(カテエネ)等の過去CSVを読み込むと、月別グラフが表示されます。")
+
+        with tab_sub2:
+            st.markdown("##### 📁 電力会社/HEMSの過去データCSV読込")
+            st.caption("※ 中部電力「カテエネ」や他社HEMSからダウンロードしたCSVログを取り込みます。")
+            
+            uploaded_csv = st.file_uploader("CSVファイルをアップロード", type=["csv"])
+            if uploaded_csv is not None:
+                import tempfile
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp:
+                    tmp.write(uploaded_csv.getvalue())
+                    tmp_path = tmp.name
+                    
+                res = import_katene_csv(tmp_path)
+                if res.get("success"):
+                    st.success(f"🎉 インポート成功！ {res.get('imported_rows', 0)} 件の過去データを読み込みました。")
+                    st.rerun()
+                else:
+                    st.error(f"⚠️ インポート失敗: {res.get('error')}")
+
         # 🩺 ニチコン詳細診断
         with st.expander("🩺 ニチコンT5 ECHONET Liteデバイス詳細", expanded=False):
             d_col1, d_col2 = st.columns(2)
@@ -1095,140 +1229,6 @@ with tab3:
                 st.write(f"・**充放電**: `{batt_sys_info.get('power_w', 0):,} W` (+充電 / -放電)")
                 st.write(f"・**累計充電**: `{batt_sys_info.get('cum_charge_kwh', 1240):,} kWh` | **放電**: `{batt_sys_info.get('cum_discharge_kwh', 1180):,} kWh`")
 
-        # 自給率グラフの描画
-        st.markdown("##### 📈 日別エネルギー自給率推移 (%)")
-        import altair as alt
-        
-        daily_suff_data = self_suff.get("daily_data", [])
-        if not daily_suff_data:
-            base_date = datetime.now() - timedelta(days=30)
-            daily_suff_data = [
-                {"date": (base_date + timedelta(days=i)).strftime("%Y-%m-%d"), "self_sufficiency_percent": min(100, max(45, int(75 + random.uniform(-20, 20))))}
-                for i in range(30)
-            ]
-            
-        df_suff = pd.DataFrame(daily_suff_data)
-        chart_suff = alt.Chart(df_suff).mark_area(
-            color='rgba(52, 211, 153, 0.15)',
-            line={'color': '#34d399', 'strokeWidth': 1.8},
-            interpolate='monotone'
-        ).encode(
-            x=alt.X('date:T', title=None, axis=alt.Axis(format='%m/%d', grid=True, gridColor='rgba(255,255,255,0.06)', labelColor='#cbd5e1')),
-            y=alt.Y('self_sufficiency_percent:Q', title=None, scale=alt.Scale(domain=[0, 100]), axis=alt.Axis(grid=True, gridColor='rgba(255,255,255,0.06)', labelColor='#cbd5e1')),
-            tooltip=[
-                alt.Tooltip('date:T', title='日付', format='%Y/%m/%d'),
-                alt.Tooltip('self_sufficiency_percent:Q', title='自給率 (%)')
-            ]
-        ).properties(
-            height=95
-        ).configure_view(
-            strokeOpacity=0
-        ).configure(
-            background='transparent'
-        )
-        st.altair_chart(chart_suff, use_container_width=True)
-
-        # HEMS 実機 ＆ CSV過去ログ実績
-        st.markdown("##### 📊 HEMS 実機 ＆ CSV過去ログ実績 (kWh / 円)")
-        
-        from hems_monthly_importer import get_hems_monthly_history
-        from katene_importer import import_katene_csv, get_historical_load_summary
-        
-        hist_sub_tab1, hist_sub_tab2, hist_sub_tab3 = st.tabs([
-            "⚡ 日別推移", 
-            "📅 月別推移 (2016〜)",
-            "📁 CSVインポート"
-        ])
-        
-        with hist_sub_tab1:
-            h_history = get_hems_daily_history(limit=1000, filter_zero=True)
-            if not h_history:
-                base_d = datetime.now() - timedelta(days=30)
-                h_history = [
-                    {
-                        "date_str": (base_d + timedelta(days=i)).strftime("%Y-%m-%d"),
-                        "buy_kwh": round(random.uniform(4.0, 10.0), 1),
-                        "sale_kwh": round(random.uniform(10.0, 25.0), 1),
-                        "pv_kwh": round(random.uniform(15.0, 28.0), 1),
-                        "self_kwh": round(random.uniform(5.0, 12.0), 1),
-                        "cost_yen": random.randint(120, 380)
-                    }
-                    for i in range(30)
-                ]
-                
-            df_hh = pd.DataFrame(h_history)
-            df_hh["date_str"] = pd.to_datetime(df_hh["date_str"])
-            df_hh = df_hh.sort_values("date_str").set_index("date_str")
-            
-            st.markdown(f"**⚡ 日別 4大電力量推移 (kWh)**")
-            kwh_cols = [c for c in ["buy_kwh", "sale_kwh", "pv_kwh", "self_kwh"] if c in df_hh.columns]
-            if kwh_cols:
-                df_kwh_show = df_hh[kwh_cols].rename(columns={
-                    "buy_kwh": "買電",
-                    "sale_kwh": "売電",
-                    "pv_kwh": "発電",
-                    "self_kwh": "自家消費"
-                })
-                st.line_chart(df_kwh_show)
-
-            st.markdown(f"**💴 日別電気代 (円) 推移**")
-            st.bar_chart(df_hh[["cost_yen"]])
-                
-        with hist_sub_tab2:
-            m_history = get_hems_monthly_history()
-            if not m_history:
-                m_history = [
-                    {"year_month": f"2025-{m:02d}-01", "load_kwh": random.randint(300, 550), "cost_yen": random.randint(8000, 16000)}
-                    for m in range(1, 13)
-                ]
-            df_mh = pd.DataFrame(m_history)
-            df_mh["year_month"] = pd.to_datetime(df_mh["year_month"])
-            df_mh = df_mh.sort_values("year_month").set_index("year_month")
-            
-            st.markdown(f"**月別消費電力量 (kWh)**")
-            if "load_kwh" in df_mh.columns:
-                st.bar_chart(df_mh[["load_kwh"]])
-            
-            st.markdown(f"**月別電気代 (円)**")
-            if "cost_yen" in df_mh.columns:
-                st.bar_chart(df_mh[["cost_yen"]])
-                
-        with hist_sub_tab3:
-            st.markdown("**電力会社・HEMS全形式 CSVログ取り込み**")
-            
-            h_summary = get_historical_load_summary()
-            if h_summary.get("count", 0) > 0:
-                st.success(
-                    f"💾 **保存中**: **{h_summary['count']:,} 件** | "
-                    f"**期間**: `{h_summary['start_date']}` 〜 `{h_summary['end_date']}` | "
-                    f"**総電力量**: **{h_summary['total_kwh']:,} kWh**"
-                )
-            else:
-                st.info("💡 下記のファイル選択から電力会社（カテエネ等）のCSVログを取り込むことができます。")
-                
-            uploaded_csv = st.file_uploader("過去の電力使用量CSVファイルをドロップ", type=["csv"])
-            if uploaded_csv is not None:
-                temp_path = "temp_uploaded_katene.csv"
-                with open(temp_path, "wb") as f:
-                    f.write(uploaded_csv.getbuffer())
-                
-                res = import_katene_csv(temp_path)
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
-                    
-                if res["success"]:
-                    st.success(f"🎉 インポート成功！ ({res['total_rows']:,} 行)")
-                    time.sleep(1.5)
-                    st.rerun()
-                else:
-                    st.error(f"❌ インポート失敗: {res['error']}")
-                    
-            if st.button("🧪 サンプル過去CSV適用"):
-                import create_sample_csv
-                res = import_katene_csv("sample_katene_2016_2026.csv")
-                if res["success"]:
-                    st.success(f"サンプル ({res['total_rows']:,} 行) を読み込みました！")
-                    st.rerun()
     except Exception as e:
         st.error(f"⚠️ 診断・分析タブの表示中にエラーが発生しました: {e}")
 
