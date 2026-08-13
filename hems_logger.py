@@ -146,14 +146,27 @@ def check_and_apply_time_based_battery_schedule(client, config=None):
                     target_mode = 0x42 # 深夜JIT急速充電モード (03:00〜06:30)
                 else:
                     # 💡 深夜料金時間帯 (21:00〜03:00 / 06:30〜07:00)
-                    # 深夜の最安買電(16.30円/kWh)を優先使用し、蓄電池は「0x44 (待機)」で放電ガード
-                    target_mode = 0x44
+                    # FIT期間中で21:00以降に蓄電池残量が20%超残っている場合、
+                    # 待機させずに下限20%まで自前放電(0x43)させて深夜買電をさらに節約！
+                    latest_soc_val = 20
+                    try:
+                        latest_info = client.get_full_system_info()
+                        latest_soc_val = latest_info.get("soc", 20)
+                    except Exception:
+                        pass
+
+                    if is_fit_active and latest_soc_val > 20:
+                        print(f"[HEMSLogger] Night Discharge Active: SOC {latest_soc_val}% > 20%. Discharging to zero-out night grid buy.")
+                        target_mode = 0x43 # 下限20%まで放電を続行
+                    else:
+                        # 20%以下に達したら待機 (0x44) で最安深夜買電を優先使用
+                        target_mode = 0x44
             else:
                 # ☀️ 昼間〜夕方時間帯 (07:00〜21:00) の収益最大化制御
                 if is_fit_active:
                     # 💰 FIT期間中 (〜2026/11/27: 売電31.0円/kWh > 深夜買電16.3円)
-                    # 17:00〜21:00 の夕方ピーク帯は「夕方売電スパート」を実施。
-                    # 深夜充電(21時)に突入する前に、使いきれていない蓄電池余剰電力を31.0円/kWhで売電・自家消費に放電し尽くす (0x43)
+                    # 17:00〜21:00 の夕方ピーク帯は「強固な夕方売電スパート」を実施。
+                    # 残量がある限り 0x43 (放電/売電優先) をセットして 31.0円/kWh で利益を出し切る。
                     target_mode = 0x43
                 else:
                     # 🌿 卒FIT後 (2026/11/28〜: 昼間買電36円 > 深夜買電16.3円 > 売電8.5円)
