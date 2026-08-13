@@ -925,7 +925,7 @@ with tab1:
 
 with tab2:
     try:
-        st.markdown("### 🎯 翌日最適充電スケジューリング ＆ ニチコンT5 蓄電池制御")
+        st.markdown("### 🎯 翌日AI最適充電 ＆ ニチコンT5 全自動制御ロジック")
         
         from datetime import datetime, timezone, timedelta
         JST = timezone(timedelta(hours=9))
@@ -936,35 +936,33 @@ with tab2:
         except Exception:
             batt_sys_info = {}
             
-        cmd_status = st.session_state.get("last_battery_cmd_status")
-        
         fit_end_date_str = config.get("fit_setting", {}).get("fit_end_date", "2026-11-27")
         try:
             fit_end_formatted = datetime.strptime(fit_end_date_str, "%Y-%m-%d").strftime("%Y/%m/%d")
         except Exception:
             fit_end_formatted = fit_end_date_str.replace("-", "/")
             
-        st.warning(
-            f"💡 **中部電力「スマートライフプラン【夜とく】」(21時〜7時) × 蓄電池寿命最得制御**:\n"
-            f"・**🔋 寿命保護JIT充電 (03:00〜06:30)**: 朝の使用直前3.5時間で急速充電し、100%満充電保持時間を極小化！蓄電池の寿命を最大化します。\n"
-            f"・**💰 31円利ざや売電 (〜{fit_end_formatted})**: 昼間(7-21時)は `0x43 (放電/売電優先)` で太陽光(31.0円/kWh)を全量売電！深夜16.3円との差額 `+14.7円/kWh` の純利益を追及！"
+        st.info(
+            f"💡 **中部電力「スマートライフプラン【夜とく】」(21時〜7時) × 最新AI最得制御アルゴリズム**:\n\n"
+            f"1. **⚡ 夜間JIT急速充電 (03:00〜06:30)**: 朝の使用直前3.5時間で最安単価(16.30円/kWh)で急速充電。バッテリー100%保持時間を極小化し寿命を最大延伸！\n"
+            f"2. **💰 昼間・夕方売電スパート (07:00〜21:00)**: 太陽光(31.0円/kWh)全量売電＆蓄電池から放電。深夜16.3円仕入れとの差額 `+14.7円/kWh` の純利益を追求！\n"
+            f"3. **🔋 夜間残量完全使い切り制御 (21:00〜03:00)**: 21時以降に蓄電池残量が20%超残っている場合、待機させず下限20%まで自前放電して夜間買電(16.3円)も完全ゼロカット！"
         )
         
-        # ⏰ 現在設定されている蓄電池の充放電タイマー設定スケジュール
-        st.markdown("#### ⏰ 現在の蓄電池 充放電タイマー設定スケジュール")
+        # ⏰ 最新の24時間運転制御モードタイムテーブル
+        st.markdown("#### ⏰ 24時間 リアルタイム全自動運転スケジュール")
         st.markdown(
-            """
-            | タイマー設定項目 | 設定時間帯（時刻窓） | 運転制御モード | 動作詳細 ＆ 電力料金 |
+            f"""
+            | 時間帯（時刻窓） | 運転制御モード | 動作モード詳細 ＆ 電力単価 | 目的・経済効果 |
             | :--- | :--- | :--- | :--- |
-            | ⚡ **充電時間帯** | **`03:00` 〜 `06:30`** | `0x42` 充電モード | 中部電力「夜とく」16.30円/kWh でJIT急速充電 |
-            | 🛑 **充電停止時間** | **`06:30` 〜 `03:00`** | 充電OFF / 停止 | 03:00〜06:30 以外のすべての時間帯で充電動作を自動停止 |
-            | 🔋 **放電時間帯** | **`06:35` 〜 `21:00`** | `0x43` 放電/売電モード | 昼間自家消費 ＆ 31.0円/kWh 高額売電 (卒FIT後は自家消費) |
-            | ⏸️ **放電停止時間** | **`21:00` 〜 `07:00`** | `0x44` 待機 (放電OFF) | 夜間安価料金帯の放電停止ガード (系統電力を優先使用) |
+            | **`07:00` 〜 `21:00`**<br>*(昼間〜夕方)* | **`0x43` 放電/売電優先** | 太陽光発電を 31.0円/kWh で全量売電 ＆ 蓄電池から宅内給電 | 高額買電(36.00円)を100%回避＋利ざや純利益 (+14.7円/kWh) 獲得 |
+            | **`21:00` 〜 `03:00`**<br>*(夜間前半)* | **`0x43` 放電継続**<br>*(SOC>20%時)*<br>➔ **`0x44` 待機**<br>*(SOC≤20%時)* | 蓄電池残量が 20% 超残っている場合は下限20%まで自前給電。<br>20%到達後は待機し最安深夜買電を優先。 | 夜間の買電(16.30円)をゼロ化し、21時時点の蓄電池残量を無駄なく利益化 |
+            | **`03:00` 〜 `06:30`**<br>*(深夜JIT帯)* | **`0x42` 急速充電** | 最安深夜単価 (16.30円/kWh) で翌日のAI目標SOCまで急速充電 | 朝の使用直前に完了させ満充電劣化を極小化 (JIT延命) |
+            | **`06:30` 〜 `07:00`**<br>*(朝バッファ)* | **`0x44` 待機 (放電OFF)** | 充電完了後の満充電状態をキープ | 朝7時の昼間料金突入に備えて残量100%を確実保持 |
             """
         )
         
         latest_sched = get_latest_schedule()
-        
         col_sched, col_batt = st.columns([1.2, 1])
         
         with col_sched:
@@ -983,11 +981,37 @@ with tab2:
                 st.success(
                     f"🤖 **AI全自動制御が有効化されています**\n\n"
                     f"・**動作予定**: 深夜 JIT 充電帯 (03:00〜06:30) に、夜間最安電力を **{target_soc_val}%** まで自動的に充電し、"
-                    f"それ以外の深夜オフピーク時間は放電を停止(系統優先)させます。昼間時間帯は自動で自家消費/売電運転に移行します。\n"
+                    f"昼間〜夜間にかけて蓄電池残量を無駄なく下限20%まで放電・売電し切ります。\n"
                     f"・**次回自動更新**: 本日 21:00 頃に翌日の最新天気予報を反映して再計算されます。"
                 )
             else:
                 st.info("🤖 AI自動スケジュール生成中... 本日夜に最適充電計画が反映されます。")
+                
+        with col_batt:
+            st.markdown("#### ⚙️ 手動運転モード一時介入")
+            st.caption("※ 通常はAI自動運転です。テストや緊急時のみ変更してください。")
+            
+            b_mode_now = batt_sys_info.get("mode", "AUTO")
+            st.markdown(f"現在のアクティブモード: **`{b_mode_now}`**")
+            
+            man_c1, man_c2 = st.columns(2)
+            with man_c1:
+                if st.button("⚡ 充電 (0x42)", use_container_width=True):
+                    expire_at = (datetime.now(JST) + timedelta(hours=1)).isoformat()
+                    with open("manual_override.json", "w", encoding="utf-8") as f:
+                        json.dump({"override_mode": 0x42, "expire_at": expire_at, "label": "手動1時間強制充電"}, f)
+                    st.success("強制充電に切り替えました")
+                    time.sleep(0.5)
+                    st.rerun()
+            with man_c2:
+                if st.button("🔋 放電 (0x43)", use_container_width=True):
+                    expire_at = (datetime.now(JST) + timedelta(hours=1)).isoformat()
+                    with open("manual_override.json", "w", encoding="utf-8") as f:
+                        json.dump({"override_mode": 0x43, "expire_at": expire_at, "label": "手動1時間強制放電"}, f)
+                    st.success("強制放電に切り替えました")
+                    time.sleep(0.5)
+                    st.rerun()
+
     except Exception as e:
         st.error(f"⚠️ AI制御タブの表示中にエラーが発生しました: {e}")
 
