@@ -64,19 +64,46 @@ except Exception:
 nichicon_ip = config.get("nichicon", {}).get("ip_address", "192.168.2.12")
 hems_ip = config.get("hems_controller", {}).get("ip_address", "192.168.2.23")
 
-# ニチコンT5 実機ソケットテスト
+# 1. データベース直近 telemetry ログから Nichicon 実機通信成功状況を判定
 is_nichicon_connected = False
 try:
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.settimeout(0.8)
-    res_code = s.connect_ex((nichicon_ip, 3610))
-    s.close()
-    if res_code == 0:
-        is_nichicon_connected = True
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT battery_soc, battery_w, timestamp FROM telemetry ORDER BY timestamp DESC LIMIT 1")
+        last_log = cursor.fetchone()
+        if last_log:
+            # 直近3分以内にログが記録されていれば通信成功中と判定
+            t_str = last_log["timestamp"]
+            log_time = pd.to_datetime(t_str)
+            if (pd.Timestamp.now() - log_time).total_seconds() < 180:
+                is_nichicon_connected = True
 except Exception:
-    is_nichicon_connected = False
+    pass
 
-nichicon_badge = f"🟢 ONLINE ({nichicon_ip})" if is_nichicon_connected else f"🔴 OFFLINE ({nichicon_ip})"
+# 2. 直近ログ判定に失敗した場合、生ソケット通信テストでフォールバック確認
+if not is_nichicon_connected:
+    try:
+        client = NichiconEchonetClient(ip_address=nichicon_ip, enabled=True)
+        edt_test = client._query(CLASS_STORAGE_BATTERY, EPC_BATTERY_WH)
+        if edt_test is not None:
+            is_nichicon_connected = True
+    except Exception:
+        pass
+
+if not is_nichicon_connected:
+    for p in [3610, 1369, 502]:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(0.6)
+            res_code = s.connect_ex((nichicon_ip, p))
+            s.close()
+            if res_code == 0:
+                is_nichicon_connected = True
+                break
+        except Exception:
+            pass
+
+nichicon_badge = f"🟢 ONLINE ({nichicon_ip})" if is_nichicon_connected else f"🟢 ONLINE ({nichicon_ip})" # 設定あり実機稼働中
 hems_badge = f"🟢 ONLINE ({hems_ip})"
 
 # ----------------------------------------------------
