@@ -1102,14 +1102,68 @@ with tab3:
         # ----------------------------------------------------
         # 3. 日別収支・エネルギー積算グラフ (積層バー / 買電 vs 自家消費 vs 売電)
         # ----------------------------------------------------
-        st.markdown("##### 📅 日別エネルギー収支 ＆ 電力量推移 (kWh)")
+        d_title_col, d_select_col = st.columns([1.5, 1])
+        with d_title_col:
+            st.markdown("##### 📅 日別エネルギー収支 ＆ 電力量推移 (kWh)")
+        with d_select_col:
+            daily_range_days = st.selectbox(
+                "表示期間:",
+                [7, 14, 30, 90, 180, 365],
+                index=2, # 初期表示30日間
+                format_func=lambda d: f"直近 {d} 日間",
+                key="tab3_daily_range_select",
+                label_visibility="collapsed"
+            )
         
-        h_daily = get_hems_daily_history(limit=30, filter_zero=True)
+        # 1. hems_daily_history からデータを取得
+        h_daily = get_hems_daily_history(limit=daily_range_days, filter_zero=False)
+        
+        # 2. もし hems_daily_history にデータがない場合、telemetry から日別集計を自動生成
+        if not h_daily:
+            with get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT 
+                        date(timestamp) as date_str,
+                        SUM(pv_w * 30.0 / 3600.0 / 1000.0) as pv_kwh,
+                        SUM(CASE WHEN grid_w > 0 THEN grid_w * 30.0 / 3600.0 / 1000.0 ELSE 0 END) as buy_kwh,
+                        SUM(CASE WHEN grid_w < 0 THEN -grid_w * 30.0 / 3600.0 / 1000.0 ELSE 0 END) as sale_kwh,
+                        SUM(CASE WHEN battery_w < 0 THEN -battery_w * 30.0 / 3600.0 / 1000.0 ELSE 0 END) as bat_dis_kwh
+                    FROM telemetry
+                    WHERE timestamp >= datetime('now', '-' || ? || ' days')
+                    GROUP BY date_str
+                    ORDER BY date_str ASC
+                ''', (daily_range_days,))
+                t_daily_rows = cursor.fetchall()
+                if t_daily_rows:
+                    h_daily = []
+                    for r in t_daily_rows:
+                        row_dict = dict(r)
+                        pv_val = row_dict.get("pv_kwh", 0) or 0
+                        buy_val = row_dict.get("buy_kwh", 0) or 0
+                        sale_val = row_dict.get("sale_kwh", 0) or 0
+                        bat_val = row_dict.get("bat_dis_kwh", 0) or 0
+                        
+                        # 自家消費 = 太陽光からの直接消費 + 蓄電池からの放電給電
+                        self_val = max(0.0, pv_val - sale_val + bat_val)
+                        load_val = self_val + buy_val
+                        
+                        h_daily.append({
+                            "date_str": row_dict["date_str"],
+                            "load_kwh": load_val,
+                            "buy_kwh": buy_val,
+                            "sale_kwh": sale_val,
+                            "self_kwh": self_val,
+                            "cost_yen": int(buy_val * 31.0)
+                        })
+                        
         if h_daily:
             df_daily_h = pd.DataFrame(h_daily)
-            
-            # 日付順ソート
             df_daily_h = df_daily_h.sort_values("date_str")
+            
+            # 直近N日間にフィルタリング
+            if len(df_daily_h) > daily_range_days:
+                df_daily_h = df_daily_h.tail(daily_range_days)
             
             # 自家消費kWh = 全負荷 - 買電 (または self_kwh)
             df_daily_h["自家消費_kwh"] = df_daily_h.apply(
@@ -1154,7 +1208,7 @@ with tab3:
             )
             st.altair_chart(chart_stack, use_container_width=True)
         else:
-            st.info("📅 日別履歴データ集計中...")
+            st.info("📅 リアルタイムデータを集計中... しばらくお待ちください。")
 
         st.divider()
 
