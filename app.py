@@ -53,80 +53,106 @@ if os.path.exists("manual_override.json"):
         pass
 
 st.sidebar.title("⚡ AI HEMS OS v2.4")
+
 try:
     with open("config.yaml", "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
 except Exception:
     config = {}
 
-broute_status = "🟢 有効" if config.get("broute", {}).get("enabled") else "🟡 シミュレーション"
-nichicon_status = "🟢 有効 (192.168.2.12)" if config.get("nichicon", {}).get("enabled") else "🟡 シミュレーション"
+# 📡 デバイス接続リアルタイム判定（Nichicon T5 ＆ HEMS Web）
+nichicon_ip = config.get("nichicon", {}).get("ip_address", "192.168.2.12")
+hems_ip = config.get("hems_controller", {}).get("ip_address", "192.168.2.23")
 
-st.sidebar.markdown(f"**位置情報**: `{config.get('location', {}).get('name', 'Nagoya')}`")
-st.sidebar.markdown(f"**太陽光定格**: `{int(config.get('system', {}).get('pv_capacity_kw', 4))} kW`")
-st.sidebar.markdown(f"**蓄電池容量**: `{config.get('system', {}).get('battery_capacity_kwh', 14.9)} kWh`")
-st.sidebar.markdown(f"**ニチコンT5**: {nichicon_status}")
-st.sidebar.markdown(f"**HEMS Web**: 🟢 ONLINE (192.168.2.23)")
+# ニチコンT5 実機ソケットテスト
+is_nichicon_connected = False
+try:
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(0.8)
+    res_code = s.connect_ex((nichicon_ip, 3610))
+    s.close()
+    if res_code == 0:
+        is_nichicon_connected = True
+except Exception:
+    is_nichicon_connected = False
+
+nichicon_badge = f"🟢 ONLINE ({nichicon_ip})" if is_nichicon_connected else f"🔴 OFFLINE ({nichicon_ip})"
+hems_badge = f"🟢 ONLINE ({hems_ip})"
+
+# ----------------------------------------------------
+# 1. システム・機器接続ステータス (Card Style)
+# ----------------------------------------------------
+st.sidebar.markdown("##### 🔌 機器接続ステータス")
+st.sidebar.markdown(
+    f"""
+    <div style="background-color: rgba(255,255,255,0.04); border-radius: 8px; padding: 10px; font-size: 0.82rem; line-height: 1.6; border: 1px solid rgba(255,255,255,0.08);">
+        <div><strong>🔋 ニチコン V2H</strong>: {nichicon_badge}</div>
+        <div><strong>🏠 HEMS Controller</strong>: {hems_badge}</div>
+        <div><strong>📍 設置地域</strong>: `{config.get('location', {}).get('name', '名古屋市')}`</div>
+        <div><strong>☀️ PV容量</strong>: `{config.get('system', {}).get('pv_capacity_kw', 4.0)} kW` | <strong>蓄電池</strong>: `{config.get('system', {}).get('battery_capacity_kwh', 14.9)} kWh`</div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
 st.sidebar.divider()
 
-# 1. リアルタイム自動更新トグル
-auto_refresh = st.sidebar.toggle("🔄 リアルタイム自動更新 (5秒)", value=True)
-
-st.sidebar.divider()
-
-# 2. ⚡ 緊急手動コントロール
-st.sidebar.markdown("### ⚡ 緊急手動コントロール")
+# ----------------------------------------------------
+# 2. ⚡ AI自動運転 / 緊急手動オーバーライド
+# ----------------------------------------------------
+st.sidebar.markdown("##### 🤖 AI制御 ＆ 手動操作")
 if override_active:
-    st.sidebar.warning(f"⚠️ 一時手動介入中:\n{override_mode_str}\n({override_time_left_str})")
-    if st.sidebar.button("🤖 AI自動制御に即時復帰", use_container_width=True):
+    st.sidebar.warning(f"⚠️ **手動介入中**\n\n{override_mode_str}\n({override_time_left_str})")
+    if st.sidebar.button("🤖 AI自動制御に復帰", use_container_width=True):
         if os.path.exists("manual_override.json"):
             os.remove("manual_override.json")
         st.sidebar.success("AI自動制御へ復帰しました！")
         time.sleep(0.5)
         st.rerun()
 else:
-    st.sidebar.success("🤖 AI自動運転中")
-    
-    col_charge, col_standby = st.sidebar.columns(2)
-    with col_charge:
-        if st.sidebar.button("⚡ 充電 (1h)", use_container_width=True, help="1時間強制充電"):
+    st.sidebar.success("🤖 **AI自動運転中** (最適化稼働)")
+    c_btn1, c_btn2 = st.sidebar.columns(2)
+    with c_btn1:
+        if st.sidebar.button("⚡ 強制充電", use_container_width=True, help="1時間強制充電 (0x42)"):
             expire_at = (now_dt + timedelta(hours=1)).isoformat()
             with open("manual_override.json", "w", encoding="utf-8") as f:
                 json.dump({"override_mode": 0x42, "expire_at": expire_at, "label": "手動1時間強制充電"}, f)
-            st.sidebar.success("1h充電をセット！")
+            st.sidebar.success("1h充電セット")
             time.sleep(0.5)
             st.rerun()
-    with col_standby:
-        if st.sidebar.button("⏸️ 待機 (3h)", use_container_width=True, help="3時間放電停止"):
-            expire_at = (now_dt + timedelta(hours=3)).isoformat()
+    with c_btn2:
+        if st.sidebar.button("🔋 強制放電", use_container_width=True, help="1時間強制放電 (0x43)"):
+            expire_at = (now_dt + timedelta(hours=1)).isoformat()
             with open("manual_override.json", "w", encoding="utf-8") as f:
-                json.dump({"override_mode": 0x44, "expire_at": expire_at, "label": "手動3時間強制待機"}, f)
-            st.sidebar.success("3h待機をセット！")
+                json.dump({"override_mode": 0x43, "expire_at": expire_at, "label": "手動1時間強制放電"}, f)
+            st.sidebar.success("1h放電セット")
             time.sleep(0.5)
             st.rerun()
 
 st.sidebar.divider()
 
-# 3. 過去データ同期・抽出ボタン
-st.sidebar.markdown("### 📥 過去データの同期・抽出操作")
-if st.sidebar.button("📥 直近14日間の履歴データを同期", use_container_width=True):
-    with st.sidebar.spinner("HEMS Web コントローラから直近14日分の履歴ログを取得中..."):
-        count = fetch_hems_past_days_history(days=14)
-        if count > 0:
-            st.sidebar.success(f"直近 {count} 日分の履歴ログを同期しました！")
+# ----------------------------------------------------
+# 3. ⚙️ システム設定 ＆ データ同期
+# ----------------------------------------------------
+st.sidebar.markdown("##### ⚙️ データ同期・自動更新")
+auto_refresh = st.sidebar.toggle("🔄 リアルタイム自動更新 (5s)", value=True)
+
+with st.sidebar.expander("📥 過去データ同期・抽出", expanded=False):
+    if st.button("📥 直近14日分の履歴を同期", use_container_width=True):
+        with st.spinner("HEMSから同期中..."):
+            count = fetch_hems_past_days_history(days=14)
+            if count > 0:
+                st.success(f"{count} 日分同期しました！")
+                time.sleep(0.8)
+                st.rerun()
+            else:
+                st.info("新しいログはありません。")
+
+    if st.button("⚡ 10年分履歴を一括抽出", use_container_width=True):
+        if start_bulk_extraction_async(start_year=2016, end_year=2026):
+            st.success("一括抽出を開始しました！")
             time.sleep(0.8)
             st.rerun()
-        else:
-            st.sidebar.info("同期対象の新しい履歴ログはありません。")
-
-if st.sidebar.button("⚡ 2016年〜全期間(約10年)履歴一括抽出", use_container_width=True):
-    if start_bulk_extraction_async(start_year=2016, end_year=2026):
-        st.sidebar.success("バックグラウンド履歴一括抽出を開始しました！画面上部に進捗が表示されます。")
-        time.sleep(0.8)
-        st.rerun()
-    else:
-        st.sidebar.warning("すでに履歴一括抽出タスクが実行中です。")
 
 
 
