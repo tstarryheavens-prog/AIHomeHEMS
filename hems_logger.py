@@ -218,6 +218,21 @@ def check_and_apply_time_based_battery_schedule(client, config=None):
     if not success:
         print("[HEMSLogger] CRITICAL: Failed to update battery mode after 3 attempts.")
 
+    # 💡 2重安全装置: ニチコンT5本体のハードウェア内部タイマー (EPC 0xC3/0xC4) へも時刻設定を同期書き込み
+    # 万が一HEMSプログラムが一時的に停止した場合でも、蓄電池基板自体が03:00〜06:30に自立自動充電を実行
+    try:
+        if not hasattr(check_and_apply_time_based_battery_schedule, "_timer_synced"):
+            client.set_battery_timer_schedule(
+                charge_start_h=3, charge_start_m=0,
+                charge_end_h=6, charge_end_m=30,
+                discharge_start_h=6, discharge_start_m=35,
+                discharge_end_h=21, discharge_end_m=0
+            )
+            check_and_apply_time_based_battery_schedule._timer_synced = True
+            print("[HEMSLogger] Successfully synced hardware timer schedule to Nichicon T5 board (03:00-06:30 Charge).")
+    except Exception as t_err:
+        print(f"[HEMSLogger] Hardware timer sync skipped or failed: {t_err}")
+
 
 def poll_and_log_all_data(config_path="config.yaml"):
     """
