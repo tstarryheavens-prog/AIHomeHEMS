@@ -620,12 +620,12 @@ def render_tab1_live():
     # 2. グラフ選択コントロール用の表示エリアを定義（表示が下になる）
     control_area = st.container()
     
-    limit_map = {
-        "📅 全期間 過去全ログ (約35,000件)": 100000,
-        "📅 直近 48時間 (約34,560件)": 34560,
-        "📅 直近 24時間 (約17,280件)": 17280,
-        "🕕 直近 6時間 (約4,320件)": 4320,
-        "🕐 直近 1時間 (約720件)": 720
+    hours_map = {
+        "📅 全期間 過去全ログ": None,
+        "📅 直近 48時間": 48,
+        "📅 直近 24時間": 24,
+        "🕕 直近 6時間": 6,
+        "🕐 直近 1時間": 1
     }
     
     with control_area:
@@ -643,25 +643,32 @@ def render_tab1_live():
             range_option = st.selectbox(
                 "期間:",
                 [
-                    "📅 全期間 過去全ログ (約35,000件)",
-                    "📅 直近 48時間 (約34,560件)",
-                    "📅 直近 24時間 (約17,280件)",
-                    "🕕 直近 6時間 (約4,320件)",
-                    "🕐 直近 1時間 (約720件)"
+                    "📅 直近 24時間",
+                    "📅 直近 48時間",
+                    "🕕 直近 6時間",
+                    "🕐 直近 1時間",
+                    "📅 全期間 過去全ログ"
                 ],
-                index=1, # 初期表示を直近48時間に設定！
+                index=0,
                 key="live_range_option",
                 label_visibility="collapsed"
             )
         
-    fetch_limit = limit_map.get(range_option, 34560)
-    telemetry_hist = get_recent_telemetry(limit=fetch_limit)
+    telemetry_hist = get_recent_telemetry(limit=50000)
     
     with chart_area:
         if telemetry_hist:
             df_th = pd.DataFrame(telemetry_hist)
             df_th["timestamp"] = pd.to_datetime(df_th["timestamp"])
             df_th = df_th.sort_values("timestamp")
+            
+            # 💡 件数件数ではなく、実際の最新時刻から指定時間（24時間・48時間等）を時間で厳密カット
+            req_hours = hours_map.get(range_option)
+            if req_hours is not None and not df_th.empty:
+                max_ts = df_th["timestamp"].max()
+                min_cutoff = max_ts - pd.Timedelta(hours=req_hours)
+                df_th = df_th[df_th["timestamp"] >= min_cutoff]
+                
             num_cols = [c for c in ["pv_w", "grid_w", "battery_w", "battery_soc"] if c in df_th.columns]
             
             df_th_index = df_th.set_index("timestamp")
