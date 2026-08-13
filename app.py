@@ -621,11 +621,12 @@ def render_tab1_live():
     control_area = st.container()
     
     hours_map = {
-        "📅 全期間 過去全ログ": None,
-        "📅 直近 48時間": 48,
         "📅 直近 24時間": 24,
+        "📅 直近 48時間": 48,
+        "🗓️ 直近 1週間 (7日間)": 168,
         "🕕 直近 6時間": 6,
-        "🕐 直近 1時間": 1
+        "🕐 直近 1時間": 1,
+        "🌐 全期間 過去全ログ": None
     }
     
     with control_area:
@@ -645,16 +646,17 @@ def render_tab1_live():
                 [
                     "📅 直近 24時間",
                     "📅 直近 48時間",
+                    "🗓️ 直近 1週間 (7日間)",
                     "🕕 直近 6時間",
                     "🕐 直近 1時間",
-                    "📅 全期間 過去全ログ"
+                    "🌐 全期間 過去全ログ"
                 ],
                 index=0,
                 key="live_range_option",
                 label_visibility="collapsed"
             )
         
-    telemetry_hist = get_recent_telemetry(limit=50000)
+    telemetry_hist = get_recent_telemetry(limit=60000)
     
     with chart_area:
         if telemetry_hist:
@@ -662,7 +664,7 @@ def render_tab1_live():
             df_th["timestamp"] = pd.to_datetime(df_th["timestamp"])
             df_th = df_th.sort_values("timestamp")
             
-            # 💡 件数件数ではなく、実際の最新時刻から指定時間（24時間・48時間等）を時間で厳密カット
+            # 💡 実際の最新時刻から指定時間（24時間・48時間・1週間等）を厳密カット
             req_hours = hours_map.get(range_option)
             if req_hours is not None and not df_th.empty:
                 max_ts = df_th["timestamp"].max()
@@ -672,7 +674,9 @@ def render_tab1_live():
             num_cols = [c for c in ["pv_w", "grid_w", "battery_w", "battery_soc"] if c in df_th.columns]
             
             df_th_index = df_th.set_index("timestamp")
-            if len(df_th) > 10000:
+            if len(df_th) > 20000:
+                df_th_plot = df_th_index[num_cols].resample('30min').mean().dropna()
+            elif len(df_th) > 10000:
                 df_th_plot = df_th_index[num_cols].resample('10min').mean().dropna()
             elif len(df_th) > 2000:
                 df_th_plot = df_th_index[num_cols].resample('2min').mean().dropna()
@@ -686,6 +690,9 @@ def render_tab1_live():
                 min_t = df_reset["timestamp"].min()
                 max_t = df_reset["timestamp"].max()
                 x_scale = alt.Scale(domain=[min_t, max_t])
+                
+                # 💡 横軸ラベルを見やすく簡略化 (00分表記をなくし、月/日 時のすっきり表示に)
+                x_axis_format = '%m/%d %H時'
                 
                 rename_dict = {
                     "pv_w": "太陽光発電 (W)",
@@ -713,7 +720,7 @@ def render_tab1_live():
                     # 1. 電力用 (左軸 - W)
                     df_melt_pow = df_plot_renamed.melt("timestamp", value_vars=plot_power_cols, var_name="指標", value_name="電力")
                     power_chart = alt.Chart(df_melt_pow).mark_line(interpolate='monotone', strokeWidth=1.5).encode(
-                        x=alt.X('timestamp:T', title=None, scale=x_scale, axis=alt.Axis(format='%m/%d %H:%M', grid=True, gridColor=grid_color, labelColor=text_color)),
+                        x=alt.X('timestamp:T', title=None, scale=x_scale, axis=alt.Axis(format=x_axis_format, grid=True, gridColor=grid_color, labelColor=text_color)),
                         y=alt.Y('電力:Q', title='電力 (W)', axis=alt.Axis(grid=True, gridColor=grid_color, labelColor=text_color, titleColor=text_color)),
                         color=alt.Color('指標:N', scale=color_scale, legend=alt.Legend(title=None, labelColor=text_color, direction='horizontal', orient='bottom'))
                     )
@@ -742,7 +749,7 @@ def render_tab1_live():
                     df_melt = df_plot_renamed.melt("timestamp", value_vars=plot_cols, var_name="指標", value_name="値")
                     
                     chart = alt.Chart(df_melt).mark_line(interpolate='monotone', strokeWidth=1.5).encode(
-                        x=alt.X('timestamp:T', title=None, scale=x_scale, axis=alt.Axis(format='%m/%d %H:%M', grid=True, gridColor=grid_color, labelColor=text_color)),
+                        x=alt.X('timestamp:T', title=None, scale=x_scale, axis=alt.Axis(format=x_axis_format, grid=True, gridColor=grid_color, labelColor=text_color)),
                         y=alt.Y('値:Q', title=y_label, axis=alt.Axis(grid=True, gridColor=grid_color, labelColor=text_color, titleColor=text_color)),
                         color=alt.Color('指標:N', scale=color_scale, legend=alt.Legend(title=None, labelColor=text_color, direction='horizontal', orient='bottom')),
                         tooltip=[
