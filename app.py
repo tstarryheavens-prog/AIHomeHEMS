@@ -443,8 +443,8 @@ elif bulk_status["processed_days"] > 0 and bulk_status["processed_days"] == bulk
     st.success(f"✅ 2016年からの全期間 ({bulk_status['extracted_records']}日分) の履歴ログの一括抽出・DB保存が完了しました！")
 
 
-# 🗂️ 3タブレイアウトの構築
-tab1, tab2, tab3 = st.tabs(["🎛️ ライブ", "🤖 AI制御", "🛡️ 診断・分析"])
+# 🗂️ 4タブレイアウトの構築
+tab1, tab2, tab4, tab3 = st.tabs(["🎛️ ライブ", "🤖 AI制御", "💰 1ヶ月収支・利益明細", "🛡️ 診断・分析"])
 
 # フラグメント更新関数 (ページ全体の暗転チラつきを完全排除してサイレント更新)
 @st.fragment(run_every=5 if auto_refresh else None)
@@ -742,17 +742,18 @@ def render_tab1_live():
                 df_reset = df.reset_index()
                 min_t = df_reset["timestamp"].min()
                 max_t = df_reset["timestamp"].max()
+                
+                # 選択された時間範囲に応じた最適なX軸フォーマット
+                if range_option in ["🕐 直近 1時間", "🕕 直近 6時間"]:
+                    x_axis_format = '%H:%M'
+                elif range_option in ["📅 直近 24時間", "📅 直近 48時間"]:
+                    x_axis_format = '%m/%d %H時'
+                elif range_option == "🗓️ 直近 1週間 (7日間)":
+                    x_axis_format = '%m/%d'
+                else:
+                    x_axis_format = '%Y/%m/%d'
+
                 x_scale = alt.Scale(domain=[min_t, max_t])
-                
-                # 💡 横軸ラベルを見やすく簡略化 (00分表記をなくし、月/日 時のすっきり表示に)
-                x_axis_format = '%m/%d %H時'
-                
-                rename_dict = {
-                    "pv_w": "太陽光発電 (W)",
-                    "grid_w": "買電/売電 (W)",
-                    "battery_w": "蓄電池充放電 (W)",
-                    "battery_soc": "蓄電池 SOC (%)"
-                }
                 
                 # モバイル文字色用 (明るい色)
                 text_color = '#e2e8f0'
@@ -781,7 +782,7 @@ def render_tab1_live():
                     # 2. SOC用 (右軸 - %)
                     df_melt_soc = df_plot_renamed.melt("timestamp", value_vars=["蓄電池 SOC (%)"], var_name="指標", value_name="残量")
                     soc_chart = alt.Chart(df_melt_soc).mark_line(interpolate='monotone', strokeWidth=2.2, strokeDash=[4, 3]).encode(
-                        x=alt.X('timestamp:T', scale=x_scale),
+                        x=alt.X('timestamp:T', title=None, scale=x_scale, axis=alt.Axis(format=x_axis_format, grid=False, labelColor='#10b981', titleColor='#10b981')),
                         y=alt.Y('残量:Q', title='残量 (%)', scale=alt.Scale(domain=[0, 100]), axis=alt.Axis(grid=False, labelColor='#10b981', titleColor='#10b981')),
                         color=alt.Color('指標:N', scale=color_scale, legend=alt.Legend(title=None, labelColor=text_color, direction='horizontal', orient='bottom'))
                     )
@@ -1067,6 +1068,172 @@ with tab2:
 
     except Exception as e:
         st.error(f"⚠️ AI制御タブの表示中にエラーが発生しました: {e}")
+
+with tab4:
+    try:
+        st.markdown("### 💰 1ヶ月 日別収支・売電買電・純利益明細台帳")
+        st.caption("※ 太陽光FIT売電収入(31.0円)、深夜買電支出(16.3円/kWh)、昼間買電(36円/kWh)、および自家消費節約額の毎日明細です。")
+
+        from database import get_connection
+        import pandas as pd
+        import altair as alt
+
+        # 単価設定
+        FIT_SELL_RATE = config.get("fit_setting", {}).get("pre_fit_sell_price", 31.0)
+        NIGHT_BUY_RATE = config.get("electricity_tariff", {}).get("night_rate_yen_kwh", 16.30)
+        DAY_BUY_RATE = config.get("electricity_tariff", {}).get("day_rate_yen_kwh", 36.00)
+
+        # 期間選択コントロール
+        col_t4_title, col_t4_select = st.columns([1.5, 1])
+        with col_t4_select:
+            ledger_range_days = st.selectbox(
+                "表示期間:",
+                [7, 14, 30, 60, 90, 180, 365],
+                index=2, # デフォルト直近30日間（1ヶ月）
+                format_func=lambda d: f"直近 {d} 日間 (1ヶ月分)" if d == 30 else f"直近 {d} 日間",
+                key="tab4_ledger_range_select",
+                label_visibility="collapsed"
+            )
+
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT 
+                    date(timestamp) as date_val,
+                    ROUND(SUM(CASE WHEN grid_w < 0 THEN -grid_w * 30.0 / 3600.0 / 1000.0 ELSE 0 END), 2) as sell_kwh,
+                    ROUND(SUM(CASE WHEN grid_w > 0 AND (CAST(strftime('%H', timestamp) AS INT) >= 21 OR CAST(strftime('%H', timestamp) AS INT) < 7) THEN grid_w * 30.0 / 3600.0 / 1000.0 ELSE 0 END), 2) as night_buy_kwh,
+                    ROUND(SUM(CASE WHEN grid_w > 0 AND (CAST(strftime('%H', timestamp) AS INT) >= 7 AND CAST(strftime('%H', timestamp) AS INT) < 21) THEN grid_w * 30.0 / 3600.0 / 1000.0 ELSE 0 END), 2) as day_buy_kwh,
+                    ROUND(SUM(CASE WHEN battery_w < 0 THEN -battery_w * 30.0 / 3600.0 / 1000.0 ELSE 0 END), 2) as self_discharge_kwh
+                FROM telemetry
+                WHERE timestamp >= datetime('now', '-' || ? || ' days')
+                GROUP BY date_val
+                ORDER BY date_val DESC
+            ''', (ledger_range_days,))
+            l_rows = cursor.fetchall()
+
+        if l_rows:
+            df_ledger = pd.DataFrame([dict(r) for r in l_rows])
+
+            df_ledger['total_buy_kwh'] = df_ledger['night_buy_kwh'] + df_ledger['day_buy_kwh']
+            df_ledger['sell_revenue_yen'] = (df_ledger['sell_kwh'] * FIT_SELL_RATE).round(0)
+            df_ledger['night_buy_cost_yen'] = (df_ledger['night_buy_kwh'] * NIGHT_BUY_RATE).round(0)
+            df_ledger['day_buy_cost_yen'] = (df_ledger['day_buy_kwh'] * DAY_BUY_RATE).round(0)
+            df_ledger['total_buy_cost_yen'] = df_ledger['night_buy_cost_yen'] + df_ledger['day_buy_cost_yen']
+            df_ledger['net_profit_yen'] = df_ledger['sell_revenue_yen'] - df_ledger['total_buy_cost_yen']
+            df_ledger['avoided_day_cost_yen'] = (df_ledger['self_discharge_kwh'] * DAY_BUY_RATE).round(0)
+
+            # ----------------------------------------------------
+            # 1. 最上段：期間累計サマリーメトリクス
+            # ----------------------------------------------------
+            tot_sell_kwh = df_ledger['sell_kwh'].sum()
+            tot_sell_rev = df_ledger['sell_revenue_yen'].sum()
+            tot_buy_kwh = df_ledger['total_buy_kwh'].sum()
+            tot_buy_cost = df_ledger['total_buy_cost_yen'].sum()
+            tot_net_profit = df_ledger['net_profit_yen'].sum()
+            tot_avoided = df_ledger['avoided_day_cost_yen'].sum()
+            tot_total_impact = tot_net_profit + tot_avoided
+
+            sm1, sm2, sm3, sm4 = st.columns(4)
+            sm1.metric("💰 売電収入 (FIT 31円)", f"¥{int(tot_sell_rev):,}", f"{tot_sell_kwh:.1f} kWh")
+            sm2.metric("⚡ 買電支出 (深夜16.3円/昼36円)", f"¥{int(tot_buy_cost):,}", f"{tot_buy_kwh:.1f} kWh", delta_color="inverse")
+            sm3.metric("🏆 差引累計純利益", f"¥{int(tot_net_profit):,}", f"売電 - 買電")
+            sm4.metric("🛡️ 買電カット節約額", f"¥{int(tot_avoided):,}", f"実質効果 ¥{int(tot_total_impact):,}")
+
+            st.divider()
+
+            # ----------------------------------------------------
+            # 2. 日別純利益・売買電バランスグラフ
+            # ----------------------------------------------------
+            st.markdown("##### 📈 日別 純損益 ＆ 売電・買電収支トレンド (円)")
+            
+            df_chart = df_ledger.sort_values("date_val")
+            df_chart_melt = df_chart.melt(
+                id_vars=["date_val"],
+                value_vars=["sell_revenue_yen", "total_buy_cost_yen", "net_profit_yen"],
+                var_name="収支項目",
+                value_name="金額円"
+            )
+            label_map_leg = {
+                "sell_revenue_yen": "💰 売電収入 (+)",
+                "total_buy_cost_yen": "⚡ 買電支出 (-)",
+                "net_profit_yen": "🏆 純損益 (利益)"
+            }
+            df_chart_melt["収支項目"] = df_chart_melt["収支項目"].map(label_map_leg)
+
+            chart_ledger = alt.Chart(df_chart_melt).mark_line(interpolate='monotone', strokeWidth=2).encode(
+                x=alt.X('date_val:N', title=None, axis=alt.Axis(labelAngle=-45, labelColor='#cbd5e1')),
+                y=alt.Y('金額円:Q', title='金額 (円)', axis=alt.Axis(grid=True, gridColor='rgba(255,255,255,0.06)', labelColor='#cbd5e1')),
+                color=alt.Color('収支項目:N', scale=alt.Scale(
+                    domain=["💰 売電収入 (+)", "⚡ 買電支出 (-)", "🏆 純損益 (利益)"],
+                    range=["#fbbf24", "#ef4444", "#10b981"]
+                ), legend=alt.Legend(orient='top', title=None, labelColor='#e2e8f0')),
+                tooltip=[
+                    alt.Tooltip('date_val:N', title='日付'),
+                    alt.Tooltip('収支項目:N', title='区分'),
+                    alt.Tooltip('金額円:Q', title='金額 (円)', format=',.0f')
+                ]
+            ).properties(
+                height=220
+            ).configure_view(
+                strokeOpacity=0
+            ).configure(
+                background='transparent'
+            )
+            st.altair_chart(chart_ledger, use_container_width=True)
+
+            st.divider()
+
+            # ----------------------------------------------------
+            # 3. 日別収支・売電買電量 ＆ 金額詳細明細テーブル
+            # ----------------------------------------------------
+            st.markdown("##### 📋 日別収支・売買電電力量 ＆ 金額明細一覧")
+
+            df_display = df_ledger.copy()
+            df_display = df_display.rename(columns={
+                "date_val": "日付",
+                "sell_kwh": "売電(kWh)",
+                "sell_revenue_yen": "売電額(円)",
+                "night_buy_kwh": "深夜買電(kWh)",
+                "day_buy_kwh": "昼間買電(kWh)",
+                "total_buy_kwh": "総買電(kWh)",
+                "total_buy_cost_yen": "買電額(円)",
+                "net_profit_yen": "純利益(円)",
+                "self_discharge_kwh": "蓄電池自家消費(kWh)",
+                "avoided_day_cost_yen": "買電カット節約(円)"
+            })
+
+            show_cols = ["日付", "売電(kWh)", "売電額(円)", "深夜買電(kWh)", "昼間買電(kWh)", "総買電(kWh)", "買電額(円)", "純利益(円)", "蓄電池自家消費(kWh)", "買電カット節約(円)"]
+            df_show_table = df_display[show_cols]
+
+            st.dataframe(
+                df_show_table.style.format({
+                    "売電(kWh)": "{:.2f}",
+                    "売電額(円)": "¥{:,.0f}",
+                    "深夜買電(kWh)": "{:.2f}",
+                    "昼間買電(kWh)": "{:.2f}",
+                    "総買電(kWh)": "{:.2f}",
+                    "買電額(円)": "¥{:,.0f}",
+                    "純利益(円)": "¥{:,.0f}",
+                    "蓄電池自家消費(kWh)": "{:.2f}",
+                    "買電カット節約(円)": "¥{:,.0f}"
+                }),
+                use_container_width=True,
+                height=350
+            )
+
+            # CSVダウンロード
+            csv_data = df_show_table.to_csv(index=False, encoding="utf-8-sig")
+            st.download_button(
+                label="📥 収支明細CSVをダウンロード",
+                data=csv_data,
+                file_name=f"hems_monthly_ledger_{ledger_range_days}days.csv",
+                mime="text/csv"
+            )
+        else:
+            st.info("📅 収支明細データを集計中... ログが蓄積されると明細が表示されます。")
+
+    except Exception as e:
+        st.error(f"⚠️ 収支明細タブの表示中にエラーが発生しました: {e}")
 
 with tab3:
     try:
