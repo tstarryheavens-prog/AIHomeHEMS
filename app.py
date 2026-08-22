@@ -991,11 +991,11 @@ def render_tab1_live():
     st.divider()
 
     # ----------------------------------------------------
-    # 📹 ATOMCam 2 (HACK) ライブモニタリング ＆ 🔍 自動発見IoT機器一覧
+    # 📹 ATOMCam 2 / 🔑 SESAME / 🔍 自動発見IoT機器一覧
     # ----------------------------------------------------
-    st.markdown("##### 📹 宅内ATOMCam 2 (HACK) ライブストリーム ＆ 検出IoT機器一覧")
+    st.markdown("##### 🏠 宅内スマートデバイス統合連携 (ATOMCam / SESAME / IoT機器)")
     
-    cam_tab1, cam_tab2 = st.tabs(["📹 ATOMCam ライブビュー", "📡 検出済みスマート機器一覧"])
+    cam_tab1, cam_tab_sesame, cam_tab2 = st.tabs(["📹 ATOMCam ライブビュー", "🔑 SESAME スマートロック", "📡 検出済みスマート機器一覧"])
     
     with cam_tab1:
         st.caption("※ ATOMCam 2 (HACK) のMJPEG/RTSPライブWeb表示およびLAN直結カメラモニターです。")
@@ -1014,6 +1014,93 @@ def render_tab1_live():
             st.markdown("**📹 カメラ3 (ATOMCam 2)**")
             cam3_ip = st.text_input("カメラ3 IP:", "192.168.2.39", key="cam3_ip_input")
             components.iframe(f"http://{cam3_ip}:8080/live", height=180, scrolling=True)
+
+    with cam_tab_sesame:
+        from sesame_controller import load_sesame_config, save_sesame_config, get_sesame_status, control_sesame_lock
+        st.markdown("##### 🔑 SESAME (セサミ) スマートロック 実機API制御")
+        st.caption("※ CANDY HOUSE SESAME Web API v3 を使用して、実機の施錠・解錠・状態確認を行います。")
+
+        ses_cfg = load_sesame_config()
+        cur_api_key = ses_cfg.get("api_key", "")
+        cur_uuid = ses_cfg.get("uuid", "")
+        cur_secret = ses_cfg.get("secret_key", "")
+
+        ses_col1, ses_col2 = st.columns([1.2, 1])
+
+        with ses_col1:
+            st.markdown("###### ⚡ 実機リモート操作")
+            if cur_api_key and cur_uuid:
+                status_res = get_sesame_status(cur_api_key, cur_uuid)
+                if status_res.get("success"):
+                    is_locked = status_res.get("locked", False)
+                    batt_pct = status_res.get("battery", 100)
+                    st.markdown(
+                        f"""
+                        <div style="background:rgba(15,23,42,0.8); border:1px solid #334155; border-radius:10px; padding:12px; margin-bottom:12px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span style="font-size:1.1rem; font-weight:800; color:{'#10b981' if is_locked else '#ef4444'};">
+                                    {'🔒 施錠中 (LOCKED)' if is_locked else '🔓 解錠中 (UNLOCKED)'}
+                                </span>
+                                <span style="font-size:0.85rem; color:#94a3b8;">🔋 バッテリー: {batt_pct}%</span>
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+                else:
+                    st.warning(f"⚠️ 状態取得: {status_res.get('error')}")
+
+                s_btn1, s_btn2, s_btn3 = st.columns(3)
+                with s_btn1:
+                    if st.button("🔒 施錠 (Lock)", key="ses_btn_lock", use_container_width=True):
+                        with st.spinner("施錠コマンド送信中..."):
+                            res = control_sesame_lock("lock", cur_api_key, cur_uuid, cur_secret)
+                            if res.get("success"):
+                                st.success("🔒 実機を施錠しました！")
+                                time.sleep(0.5)
+                                st.rerun()
+                            else:
+                                st.error(f"施錠失敗: {res.get('error')}")
+                with s_btn2:
+                    if st.button("🔓 解錠 (Unlock)", key="ses_btn_unlock", use_container_width=True):
+                        with st.spinner("解錠コマンド送信中..."):
+                            res = control_sesame_lock("unlock", cur_api_key, cur_uuid, cur_secret)
+                            if res.get("success"):
+                                st.success("🔓 実機を解錠しました！")
+                                time.sleep(0.5)
+                                st.rerun()
+                            else:
+                                st.error(f"解錠失敗: {res.get('error')}")
+                with s_btn3:
+                    if st.button("🔄 切替 (Toggle)", key="ses_btn_toggle", use_container_width=True):
+                        with st.spinner("切替コマンド送信中..."):
+                            res = control_sesame_lock("toggle", cur_api_key, cur_uuid, cur_secret)
+                            if res.get("success"):
+                                st.success("🔄 状態を切り替えました！")
+                                time.sleep(0.5)
+                                st.rerun()
+                            else:
+                                st.error(f"切替失敗: {res.get('error')}")
+            else:
+                st.info("👈 右側の設定欄に API Key・UUID・Secret Key を入力して保存してください。")
+
+        with ses_col2:
+            st.markdown("###### ⚙️ SESAME API認証設定")
+            with st.form("sesame_config_form"):
+                inp_api_key = st.text_input("API Key (ダッシュボード発行):", value=cur_api_key, type="password", help="CANDY HOUSEパートナーサイト発行のAPIキー")
+                inp_uuid = st.text_input("Device UUID (デバイスID):", value=cur_uuid, help="セサミのUUID")
+                inp_secret = st.text_input("Secret Key (秘密鍵/HEX):", value=cur_secret, type="password", help="アプリの鍵共有QRコードに含まれるHEX秘密鍵（AES-CMAC署名用）")
+                
+                submitted = st.form_submit_button("💾 設定を保存する", use_container_width=True)
+                if submitted:
+                    if save_sesame_config(inp_api_key.strip(), inp_uuid.strip(), inp_secret.strip()):
+                        st.success("✅ SESAME設定を config.yaml に保存しました！")
+                        time.sleep(0.5)
+                        st.rerun()
+                    else:
+                        st.error("設定保存に失敗しました。")
+
+            st.caption("※ **Secret Key (秘密鍵) が必要な理由**: CANDY HOUSE Web API v3 では、不正操作防止のため秘密鍵を用いた暗号署名（AES-CMAC）がないリクエストは実機へ反映されず無視される仕様になっています。")
 
     with cam_tab2:
         discovered_list = st.session_state.get("discovered_iot", [])
