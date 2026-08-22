@@ -156,10 +156,22 @@ else:
             time.sleep(0.5)
             st.rerun()
 
+# ----------------------------------------------------
+# 3. 🔍 全LANスマート機器一括自動検索 (ネットワークスキャナー)
+# ----------------------------------------------------
+st.sidebar.divider()
+st.sidebar.markdown("##### 🔍 宅内スマート機器一括検索")
+if st.sidebar.button("🔍 全LAN機器を一括自動検索", use_container_width=True, help="Yeelink / Tuya / ATOMCam / SwitchBot / Google Home / 赤外線ハブ3等をネットワーク走査"):
+    with st.sidebar.spinner("宅内LAN (192.168.2.x) を高速一括スキャン中..."):
+        from network_scanner import scan_full_iot_network
+        discovered_iot = scan_full_iot_network()
+        st.session_state["discovered_iot"] = discovered_iot
+        st.sidebar.success(f"🎉 {len(discovered_iot)} 台のスマート機器を発見しました！")
+
 st.sidebar.divider()
 
 # ----------------------------------------------------
-# 3. ⚙️ システム設定 ＆ データ同期
+# 4. ⚙️ システム設定 ＆ データ同期
 # ----------------------------------------------------
 st.sidebar.markdown("##### ⚙️ データ同期・自動更新")
 auto_refresh = st.sidebar.toggle("🔄 リアルタイム自動更新 (5s)", value=True)
@@ -975,6 +987,49 @@ def render_tab1_live():
             background='transparent'
         )
         st.altair_chart(pie_chart, use_container_width=True)
+
+    st.divider()
+
+    # ----------------------------------------------------
+    # 📹 ATOMCam 2 (HACK) ライブモニタリング ＆ 🔍 自動発見IoT機器一覧
+    # ----------------------------------------------------
+    st.markdown("##### 📹 宅内ATOMCam 2 (HACK) ライブストリーム ＆ 検出IoT機器一覧")
+    
+    cam_tab1, cam_tab2 = st.tabs(["📹 ATOMCam ライブビュー", "📡 検出済みスマート機器一覧"])
+    
+    with cam_tab1:
+        st.caption("※ ATOMCam 2 (HACK) のMJPEG/RTSPライブWeb表示およびLAN直結カメラモニターです。")
+        cam_col1, cam_col2, cam_col3 = st.columns(3)
+        with cam_col1:
+            st.markdown("**📹 カメラ1 (ATOMCam 2)**")
+            st.caption("`http://192.168.2.37:8080/live`")
+            components.iframe("http://192.168.2.37:8080/live", height=200, scrolling=True)
+            st.markdown("[🔗 別ウィンドウでカメラ1を開く](http://192.168.2.37:8080/live)")
+        with cam_col2:
+            st.markdown("**📹 カメラ2 (ATOMCam 2)**")
+            st.caption("`http://192.168.2.38:8080/live` (または直接指定)")
+            cam2_ip = st.text_input("カメラ2 IP:", "192.168.2.38", key="cam2_ip_input")
+            components.iframe(f"http://{cam2_ip}:8080/live", height=180, scrolling=True)
+        with cam_col3:
+            st.markdown("**📹 カメラ3 (ATOMCam 2)**")
+            cam3_ip = st.text_input("カメラ3 IP:", "192.168.2.39", key="cam3_ip_input")
+            components.iframe(f"http://{cam3_ip}:8080/live", height=180, scrolling=True)
+
+    with cam_tab2:
+        discovered_list = st.session_state.get("discovered_iot", [])
+        if discovered_list:
+            st.success(f"🎉 宅内LANにて **{len(discovered_list)} 台** のスマート機器を自動検出済みです。")
+            df_iot = pd.DataFrame(discovered_list)
+            df_iot = df_iot.rename(columns={
+                "ip": "IPアドレス",
+                "name": "機器名称",
+                "category": "カテゴリ",
+                "ports": "オープンポート",
+                "details": "詳細情報"
+            })
+            st.dataframe(df_iot[["IPアドレス", "機器名称", "カテゴリ", "オープンポート", "詳細情報"]], use_container_width=True)
+        else:
+            st.info("💡 サイドバーの「🔍 全LAN機器を一括自動検索」ボタンを押すと、Yeelink / Tuya / ATOMCam / SwitchBot / Google Home / 赤外線ハブ3 などの全機器を一括検知します。")
 
 with tab1:
     try:
