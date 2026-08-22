@@ -757,13 +757,13 @@ def render_tab1_live():
                 
                 # モバイル文字色用 (明るい色)
                 text_color = '#e2e8f0'
-                grid_color = 'rgba(255,255,255,0.06)'
-                
-                color_scale = alt.Scale(
-                    domain=["太陽光発電 (W)", "買電/売電 (W)", "蓄電池充放電 (W)", "蓄電池 SOC (%)"],
-                    range=["#fbbf24", "#f87171", "#38bdf8", "#10b981"]
-                )
-                
+                rename_dict = {
+                    "pv_w": "太陽光発電 (W)",
+                    "grid_w": "買電/売電 (W)",
+                    "battery_w": "蓄電池充放電 (W)",
+                    "battery_soc": "蓄電池 SOC (%)"
+                }
+
                 # もしSOCと電力が混在している（全項目重ね合わせ）場合、左右2軸に分離する
                 if "battery_soc" in y_cols and len(y_cols) > 1:
                     power_vars = [c for c in ["pv_w", "grid_w", "battery_w"] if c in y_cols]
