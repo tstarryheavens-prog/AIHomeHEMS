@@ -763,8 +763,14 @@ def render_tab1_live():
             
             def draw_altair_chart_compact(df, y_cols, y_label):
                 df_reset = df.reset_index()
-                min_t = df_reset["timestamp"].min()
-                max_t = df_reset["timestamp"].max()
+                
+                # 指定時間枠の厳密な始点・終点をスケール領域として固定
+                max_t = df_reset["timestamp"].max() if not df_reset.empty else pd.Timestamp.now()
+                req_h = hours_map.get(range_option)
+                if req_h is not None:
+                    min_t = max_t - pd.Timedelta(hours=req_h)
+                else:
+                    min_t = df_reset["timestamp"].min() if not df_reset.empty else max_t - pd.Timedelta(days=7)
                 
                 # 選択された時間範囲に応じた最適なX軸フォーマット
                 if range_option in ["🕐 直近 1時間", "🕕 直近 6時間"]:
