@@ -4,6 +4,7 @@ import json
 import yaml
 import os
 import time
+from datetime import date, datetime
 import streamlit.components.v1 as components
 from database import get_recent_telemetry, get_recent_room_telemetry, get_latest_schedule, init_db, get_hems_daily_history
 from optimizer import PostFitOptimizer
@@ -199,29 +200,37 @@ with st.sidebar.expander("📥 過去データ同期・抽出", expanded=False):
 # 🖥️ メインコンテンツ表示 (最上部に計画根拠バナーを配置)
 # ==========================================
 latest_sched = get_latest_schedule()
-target_soc_val = 100
-pv_est_val = 0
-load_est_val = 0
-reason_desc = "AI自動スケジュールが計算した最適値が適用されています。"
+today_iso = date.today().isoformat()
 
-latest_sched = get_latest_schedule()
+# DBのスケジュールが未生成、または昨日以前の場合は画面ロード時に最新気象データから自動算出
+if not latest_sched or latest_sched.get("target_date") != today_iso:
+    try:
+        from optimizer import PostFitOptimizer
+        opt = PostFitOptimizer()
+        latest_sched_dict = opt.calculate_optimal_schedule()
+        latest_sched = get_latest_schedule() or latest_sched_dict
+    except Exception as e:
+        print(f"[App] Error auto-generating daily schedule: {e}")
+
 target_soc_val = 100
-pv_est_val = 0
-load_est_val = 0
+pv_est_val = 21
+load_est_val = 12
 reason_desc = "AI自動スケジュールが計算した最適値が適用されています。"
-weather_icon = "⛅"
-fit_days_str = "あと 108 日"
+weather_icon = "☀️ 快晴"
+fit_days_str = "あと 95 日"
 
 if latest_sched:
     target_soc_val = int(round(latest_sched.get('target_night_soc', 100)))
-    pv_est_val = int(round(latest_sched.get('est_pv_kwh', 0)))
-    load_est_val = int(round(latest_sched.get('est_load_kwh', 0)))
-    details = json.loads(latest_sched.get("details_json", "{}"))
+    pv_est_val = round(latest_sched.get('est_pv_kwh', 21.0), 1)
+    load_est_val = round(latest_sched.get('est_load_kwh', 12.0), 1)
     
-    fit_days = details.get("days_until_fit_end", 108)
+    details_str = latest_sched.get("details_json", "{}")
+    details = json.loads(details_str) if isinstance(details_str, str) else (details_str or {})
+    
+    fit_days = details.get("days_until_fit_end", 95)
     fit_days_str = f"あと {fit_days} 日" if fit_days > 0 else "卒FIT運用中"
     
-    weather_cond = details.get("weather_condition", "cloudy")
+    weather_cond = details.get("weather_condition", "clear")
     if weather_cond == "clear":
         weather_icon = "☀️ 快晴"
     elif weather_cond == "sunny_cloudy":
