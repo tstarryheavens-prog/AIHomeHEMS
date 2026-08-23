@@ -36,7 +36,8 @@ class PostFitOptimizer:
         # 翌日気象・発電量予測
         tomorrow_pv_info = self.weather_service.get_tomorrow_pv_estimate()
         est_pv_kwh = tomorrow_pv_info.get("total_pv_kwh", 12.0)
-        weather_condition = tomorrow_pv_info.get("condition", "cloudy") # clear, cloudy, rainy, storm
+        weather_condition = tomorrow_pv_info.get("condition", "cloudy") # clear, sunny_cloudy, cloudy, rainy, storm
+        condition_label = tomorrow_pv_info.get("condition_label", "⛅ 曇り")
 
         if is_fit_active:
             # 💰 FIT期間中 (〜2026/11/27 売電31.0円/kWh)
@@ -48,7 +49,7 @@ class PostFitOptimizer:
             
             reason = (
                 f"【FIT高額売電モード (あと {days_until_fit_end} 日 / 売電単価 {sell_price}円/kWh)】\n"
-                f"翌日予測PV: {est_pv_kwh:.1f} kWh ({weather_condition.upper()})。\n"
+                f"翌日天気: {condition_label} ｜ 発電予測: {est_pv_kwh:.1f} kWh。\n"
                 f"夜間割安電力 (16.30円) で100%充電し、昼間太陽光を31円で全量売電することで、"
                 f"1kWhあたり +{diff_price:.1f}円 の利ざや利益を追求します。"
             )

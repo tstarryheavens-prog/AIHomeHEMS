@@ -224,12 +224,14 @@ if latest_sched:
     weather_cond = details.get("weather_condition", "cloudy")
     if weather_cond == "clear":
         weather_icon = "☀️ 快晴"
+    elif weather_cond == "sunny_cloudy":
+        weather_icon = "⛅ 晴れ時々曇り"
     elif weather_cond == "rainy":
         weather_icon = "🌧️ 雨天"
     elif weather_cond == "storm":
         weather_icon = "⚡ 警報/台風"
     else:
-        weather_icon = "⛅ 曇り/標準"
+        weather_icon = "☁️ 曇り"
         
     reason_desc = details.get("recommendation_reason", reason_desc)
 

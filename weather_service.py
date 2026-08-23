@@ -22,13 +22,13 @@ class WeatherService:
 
     def fetch_forecast(self):
         """
-        Open-Meteo APIから時間ごとの日射量(shortwave_radiation: W/m2)と雲量(cloud_cover: %)を取得する
+        Open-Meteo APIから時間ごとの日射量(shortwave_radiation: W/m2)、雲量(cloud_cover: %)、天気コード(weather_code)を取得する
         """
         url = "https://api.open-meteo.com/v1/forecast"
         params = {
             "latitude": self.lat,
             "longitude": self.lon,
-            "hourly": "shortwave_radiation,cloud_cover,temperature_2m",
+            "hourly": "shortwave_radiation,cloud_cover,temperature_2m,weather_code,precipitation_probability",
             "timezone": "Asia/Tokyo",
             "forecast_days": 2
         }
@@ -42,9 +42,11 @@ class WeatherService:
             times = hourly.get("time", [])
             radiations = hourly.get("shortwave_radiation", [])
             clouds = hourly.get("cloud_cover", [])
+            codes = hourly.get("weather_code", [])
+            precips = hourly.get("precipitation_probability", [])
             
             result = []
-            for t, rad, cloud in zip(times, radiations, clouds):
+            for t, rad, cloud, code, precip in zip(times, radiations, clouds, codes, precips):
                 # 日射量 W/m2 (標準1kW/m2での発電換算)
                 # 推定瞬時電力(kW) = (日射量 / 1000 W/m2) * 定格容量(kW) * 総合効率
                 rad_val = rad if rad is not None else 0.0
@@ -54,6 +56,8 @@ class WeatherService:
                     "forecast_time": t,
                     "shortwave_radiation": rad_val,
                     "cloud_cover": cloud if cloud is not None else 0,
+                    "weather_code": code if code is not None else 0,
+                    "precipitation_probability": precip if precip is not None else 0,
                     "est_pv_kwh": round(est_pv_kw, 3) # 1時間あたりのkWh
                 })
             return result
@@ -63,7 +67,7 @@ class WeatherService:
 
     def get_tomorrow_pv_estimate(self):
         """
-        翌日の合計太陽光発電量(kWh)と時間ごとの予測データを計算する
+        翌日の合計太陽光発電量(kWh)、時間ごとの予測、および正確な天気状態(晴れ・曇り・雨・快晴)を計算する
         """
         forecasts = self.fetch_forecast()
         today_str = date.today().isoformat()
@@ -74,9 +78,43 @@ class WeatherService:
         ]
         
         total_kwh = sum(item["est_pv_kwh"] for item in tomorrow_forecasts)
+
+        # 昼間時間帯 (06:00〜18:00) の天気コードと雲量から総合判定
+        daylight_items = [
+            f for f in tomorrow_forecasts 
+            if 6 <= int(f["forecast_time"].split("T")[1].split(":")[0]) <= 18
+        ]
+        
+        if daylight_items:
+            avg_cloud = sum(f["cloud_cover"] for f in daylight_items) / len(daylight_items)
+            codes = [f.get("weather_code", 0) for f in daylight_items]
+            has_rain = any(c in [51, 53, 55, 61, 63, 65, 80, 81, 82, 95, 96, 99] for c in codes)
+            has_storm = any(c in [95, 96, 99] for c in codes)
+            
+            if has_storm:
+                condition = "storm"
+                condition_label = "⚡ 警報・雷雨"
+            elif has_rain:
+                condition = "rainy"
+                condition_label = "🌧️ 雨天"
+            elif avg_cloud < 25 or total_kwh > 18.0:
+                condition = "clear"
+                condition_label = "☀️ 快晴・日照良好"
+            elif avg_cloud < 60 or total_kwh > 12.0:
+                condition = "sunny_cloudy"
+                condition_label = "⛅ 晴れ時々曇り"
+            else:
+                condition = "cloudy"
+                condition_label = "☁️ 曇り"
+        else:
+            condition = "clear" if total_kwh > 15.0 else "cloudy"
+            condition_label = "☀️ 晴れ" if total_kwh > 15.0 else "☁️ 曇り"
+
         return {
             "date": "Tomorrow",
             "total_pv_kwh": round(total_kwh, 2),
+            "condition": condition,
+            "condition_label": condition_label,
             "hourly": tomorrow_forecasts
         }
 
