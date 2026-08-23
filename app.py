@@ -690,12 +690,6 @@ def render_tab1_live():
     # ==========================================
     st.markdown("##### 📈 全電力トレンド推移")
     
-    # 1. グラフ用の描画エリアを先に定義（表示が上になる）
-    chart_area = st.container()
-    
-    # 2. グラフ選択コントロール用の表示エリアを定義（表示が下になる）
-    control_area = st.container()
-    
     hours_map = {
         "📅 直近 24時間": 24,
         "📅 直近 48時間": 48,
@@ -705,155 +699,155 @@ def render_tab1_live():
         "🌐 全期間 過去全ログ": None
     }
     
-    with control_area:
-        tr_col1, tr_col2 = st.columns([1.5, 1])
-        with tr_col1:
-            chart_option = st.radio(
-                "グラフ指標:",
-                ["☀️ 太陽光発電 (W)", "⚡ 買電電力 (W)", "🔋 蓄電池 SOC (%) ＆ 充放電 (W)", "📊 全項目重ね合わせ比較"],
-                index=3,
-                horizontal=True,
-                key="live_chart_option",
-                label_visibility="collapsed"
-            )
-        with tr_col2:
-            range_option = st.selectbox(
-                "期間:",
-                [
-                    "📅 直近 24時間",
-                    "📅 直近 48時間",
-                    "🗓️ 直近 1週間 (7日間)",
-                    "🕕 直近 6時間",
-                    "🕐 直近 1時間",
-                    "🌐 全期間 過去全ログ"
-                ],
-                index=0,
-                key="live_range_option",
-                label_visibility="collapsed"
-            )
+    # 1. コントロールウィジェット
+    tr_col1, tr_col2 = st.columns([1.5, 1])
+    with tr_col1:
+        chart_option = st.radio(
+            "グラフ指標:",
+            ["☀️ 太陽光発電 (W)", "⚡ 買電電力 (W)", "🔋 蓄電池 SOC (%) ＆ 充放電 (W)", "📊 全項目重ね合わせ比較"],
+            index=3,
+            horizontal=True,
+            key="live_chart_option",
+            label_visibility="collapsed"
+        )
+    with tr_col2:
+        range_option = st.selectbox(
+            "期間:",
+            [
+                "📅 直近 24時間",
+                "📅 直近 48時間",
+                "🗓️ 直近 1週間 (7日間)",
+                "🕕 直近 6時間",
+                "🕐 直近 1時間",
+                "🌐 全期間 過去全ログ"
+            ],
+            index=0,
+            key="live_range_option",
+            label_visibility="collapsed"
+        )
         
     telemetry_hist = get_recent_telemetry(limit=60000)
     
-    with chart_area:
-        if telemetry_hist:
-            df_th = pd.DataFrame(telemetry_hist)
-            df_th["timestamp"] = pd.to_datetime(df_th["timestamp"])
-            df_th = df_th.sort_values("timestamp")
+    if telemetry_hist:
+        df_th = pd.DataFrame(telemetry_hist)
+        df_th["timestamp"] = pd.to_datetime(df_th["timestamp"])
+        df_th = df_th.sort_values("timestamp")
+        
+        # 💡 実際の最新時刻から指定時間（24時間・48時間・1週間等）を厳密カット
+        req_hours = hours_map.get(range_option)
+        if req_hours is not None and not df_th.empty:
+            max_ts = df_th["timestamp"].max()
+            min_cutoff = max_ts - pd.Timedelta(hours=req_hours)
+            df_th = df_th[df_th["timestamp"] >= min_cutoff]
             
-            # 💡 実際の最新時刻から指定時間（24時間・48時間・1週間等）を厳密カット
-            req_hours = hours_map.get(range_option)
-            if req_hours is not None and not df_th.empty:
-                max_ts = df_th["timestamp"].max()
-                min_cutoff = max_ts - pd.Timedelta(hours=req_hours)
-                df_th = df_th[df_th["timestamp"] >= min_cutoff]
-                
-            num_cols = [c for c in ["pv_w", "grid_w", "battery_w", "battery_soc"] if c in df_th.columns]
+        num_cols = [c for c in ["pv_w", "grid_w", "battery_w", "battery_soc"] if c in df_th.columns]
+        
+        # 期間に応じた適切なダウンサンプリング間隔
+        df_th_index = df_th.set_index("timestamp")
+        if req_hours is None or req_hours > 72: # 1週間 or 全期間
+            df_th_plot = df_th_index[num_cols].resample('10min').mean().dropna()
+        elif req_hours > 24: # 48時間
+            df_th_plot = df_th_index[num_cols].resample('5min').mean().dropna()
+        elif req_hours > 6: # 24時間
+            df_th_plot = df_th_index[num_cols].resample('2min').mean().dropna()
+        else: # 1時間 or 6時間
+            df_th_plot = df_th_index[num_cols]
             
-            df_th_index = df_th.set_index("timestamp")
-            if len(df_th) > 20000:
-                df_th_plot = df_th_index[num_cols].resample('30min').mean().dropna()
-            elif len(df_th) > 10000:
-                df_th_plot = df_th_index[num_cols].resample('10min').mean().dropna()
-            elif len(df_th) > 2000:
-                df_th_plot = df_th_index[num_cols].resample('2min').mean().dropna()
+        import altair as alt
+        
+        def draw_altair_chart_compact(df, y_cols, y_label):
+            df_reset = df.reset_index()
+            
+            # 指定時間枠の厳密な始点・終点をスケール領域として固定
+            max_t = df_reset["timestamp"].max() if not df_reset.empty else pd.Timestamp.now()
+            req_h = hours_map.get(range_option)
+            if req_h is not None:
+                min_t = max_t - pd.Timedelta(hours=req_h)
             else:
-                df_th_plot = df_th_index[num_cols]
-                
-            import altair as alt
+                min_t = df_reset["timestamp"].min() if not df_reset.empty else max_t - pd.Timedelta(days=7)
             
-            def draw_altair_chart_compact(df, y_cols, y_label):
-                df_reset = df.reset_index()
-                
-                # 指定時間枠の厳密な始点・終点をスケール領域として固定
-                max_t = df_reset["timestamp"].max() if not df_reset.empty else pd.Timestamp.now()
-                req_h = hours_map.get(range_option)
-                if req_h is not None:
-                    min_t = max_t - pd.Timedelta(hours=req_h)
-                else:
-                    min_t = df_reset["timestamp"].min() if not df_reset.empty else max_t - pd.Timedelta(days=7)
-                
-                # 選択された時間範囲に応じた最適なX軸フォーマット
-                if range_option in ["🕐 直近 1時間", "🕕 直近 6時間"]:
-                    x_axis_format = '%H:%M'
-                elif range_option in ["📅 直近 24時間", "📅 直近 48時間"]:
-                    x_axis_format = '%m/%d %H時'
-                elif range_option == "🗓️ 直近 1週間 (7日間)":
-                    x_axis_format = '%m/%d'
-                else:
-                    x_axis_format = '%Y/%m/%d'
+            # 選択された時間範囲に応じた最適なX軸フォーマット
+            if range_option in ["🕐 直近 1時間", "🕕 直近 6時間"]:
+                x_axis_format = '%H:%M'
+            elif range_option in ["📅 直近 24時間", "📅 直近 48時間"]:
+                x_axis_format = '%m/%d %H時'
+            elif range_option == "🗓️ 直近 1週間 (7日間)":
+                x_axis_format = '%m/%d'
+            else:
+                x_axis_format = '%Y/%m/%d'
 
-                x_scale = alt.Scale(domain=[min_t, max_t])
+            x_scale = alt.Scale(domain=[min_t, max_t])
                 
-                # モバイル文字色用 (明るい色)
-                text_color = '#e2e8f0'
-                grid_color = 'rgba(255,255,255,0.06)'
-                color_scale = alt.Scale(
-                    domain=["太陽光発電 (W)", "買電/売電 (W)", "蓄電池充放電 (W)", "蓄電池 SOC (%)"],
-                    range=["#fbbf24", "#f87171", "#38bdf8", "#10b981"]
+            # モバイル文字色用 (明るい色)
+            text_color = '#e2e8f0'
+            grid_color = 'rgba(255,255,255,0.06)'
+            color_scale = alt.Scale(
+                domain=["太陽光発電 (W)", "買電/売電 (W)", "蓄電池充放電 (W)", "蓄電池 SOC (%)"],
+                range=["#fbbf24", "#f87171", "#38bdf8", "#10b981"]
+            )
+            rename_dict = {
+                "pv_w": "太陽光発電 (W)",
+                "grid_w": "買電/売電 (W)",
+                "battery_w": "蓄電池充放電 (W)",
+                "battery_soc": "蓄電池 SOC (%)"
+            }
+
+            # もしSOCと電力が混在している（全項目重ね合わせ）場合、左右2軸に分離する
+            if "battery_soc" in y_cols and len(y_cols) > 1:
+                power_vars = [c for c in ["pv_w", "grid_w", "battery_w"] if c in y_cols]
+                plot_power_cols = [rename_dict[c] for c in power_vars]
+                
+                df_plot_renamed = df_reset.rename(columns=rename_dict)
+                
+                # 1. 電力用 (左軸 - W)
+                df_melt_pow = df_plot_renamed.melt("timestamp", value_vars=plot_power_cols, var_name="指標", value_name="電力")
+                power_chart = alt.Chart(df_melt_pow).mark_line(interpolate='monotone', strokeWidth=1.5).encode(
+                    x=alt.X('timestamp:T', title=None, scale=x_scale, axis=alt.Axis(format=x_axis_format, grid=True, gridColor=grid_color, labelColor=text_color)),
+                    y=alt.Y('電力:Q', title='電力 (W)', axis=alt.Axis(grid=True, gridColor=grid_color, labelColor=text_color, titleColor=text_color)),
+                    color=alt.Color('指標:N', scale=color_scale, legend=alt.Legend(title=None, labelColor=text_color, direction='horizontal', orient='bottom'))
                 )
-                rename_dict = {
-                    "pv_w": "太陽光発電 (W)",
-                    "grid_w": "買電/売電 (W)",
-                    "battery_w": "蓄電池充放電 (W)",
-                    "battery_soc": "蓄電池 SOC (%)"
-                }
-
-                # もしSOCと電力が混在している（全項目重ね合わせ）場合、左右2軸に分離する
-                if "battery_soc" in y_cols and len(y_cols) > 1:
-                    power_vars = [c for c in ["pv_w", "grid_w", "battery_w"] if c in y_cols]
-                    plot_power_cols = [rename_dict[c] for c in power_vars]
-                    
-                    df_plot_renamed = df_reset.rename(columns=rename_dict)
-                    
-                    # 1. 電力用 (左軸 - W)
-                    df_melt_pow = df_plot_renamed.melt("timestamp", value_vars=plot_power_cols, var_name="指標", value_name="電力")
-                    power_chart = alt.Chart(df_melt_pow).mark_line(interpolate='monotone', strokeWidth=1.5).encode(
-                        x=alt.X('timestamp:T', title=None, scale=x_scale, axis=alt.Axis(format=x_axis_format, grid=True, gridColor=grid_color, labelColor=text_color)),
-                        y=alt.Y('電力:Q', title='電力 (W)', axis=alt.Axis(grid=True, gridColor=grid_color, labelColor=text_color, titleColor=text_color)),
-                        color=alt.Color('指標:N', scale=color_scale, legend=alt.Legend(title=None, labelColor=text_color, direction='horizontal', orient='bottom'))
-                    )
-                    
-                    # 2. SOC用 (右軸 - %)
-                    df_melt_soc = df_plot_renamed.melt("timestamp", value_vars=["蓄電池 SOC (%)"], var_name="指標", value_name="残量")
-                    soc_chart = alt.Chart(df_melt_soc).mark_line(interpolate='monotone', strokeWidth=2.2, strokeDash=[4, 3]).encode(
-                        x=alt.X('timestamp:T', title=None, scale=x_scale, axis=alt.Axis(format=x_axis_format, grid=False, labelColor='#10b981', titleColor='#10b981')),
-                        y=alt.Y('残量:Q', title='残量 (%)', scale=alt.Scale(domain=[0, 100]), axis=alt.Axis(grid=False, labelColor='#10b981', titleColor='#10b981')),
-                        color=alt.Color('指標:N', scale=color_scale, legend=alt.Legend(title=None, labelColor=text_color, direction='horizontal', orient='bottom'))
-                    )
-                    
-                    chart = alt.layer(power_chart, soc_chart).resolve_scale(
-                        y='independent'
-                    ).properties(
-                        height=180
-                    ).configure_view(
-                        strokeOpacity=0
-                    ).configure(
-                        background='transparent'
-                    )
-                else:
-                    # 通常の1軸グラフ
-                    plot_cols = [rename_dict[c] for c in y_cols if c in rename_dict]
-                    df_plot_renamed = df_reset.rename(columns=rename_dict)
-                    df_melt = df_plot_renamed.melt("timestamp", value_vars=plot_cols, var_name="指標", value_name="値")
-                    
-                    chart = alt.Chart(df_melt).mark_line(interpolate='monotone', strokeWidth=1.5).encode(
-                        x=alt.X('timestamp:T', title=None, scale=x_scale, axis=alt.Axis(format=x_axis_format, grid=True, gridColor=grid_color, labelColor=text_color)),
-                        y=alt.Y('値:Q', title=y_label, axis=alt.Axis(grid=True, gridColor=grid_color, labelColor=text_color, titleColor=text_color)),
-                        color=alt.Color('指標:N', scale=color_scale, legend=alt.Legend(title=None, labelColor=text_color, direction='horizontal', orient='bottom')),
-                        tooltip=[
-                            alt.Tooltip('timestamp:T', title='時刻', format='%m/%d %H:%M'),
-                            alt.Tooltip('指標:N', title='項目'),
-                            alt.Tooltip('値:Q', title='値')
-                        ]
-                    ).properties(
-                        height=180
-                    ).configure_view(
-                        strokeOpacity=0
-                    ).configure(
-                        background='transparent'
-                    )
                 
-                st.altair_chart(chart, use_container_width=True)
+                # 2. SOC用 (右軸 - %)
+                df_melt_soc = df_plot_renamed.melt("timestamp", value_vars=["蓄電池 SOC (%)"], var_name="指標", value_name="残量")
+                soc_chart = alt.Chart(df_melt_soc).mark_line(interpolate='monotone', strokeWidth=2.2, strokeDash=[4, 3]).encode(
+                    x=alt.X('timestamp:T', title=None, scale=x_scale, axis=alt.Axis(format=x_axis_format, grid=False, labelColor='#10b981', titleColor='#10b981')),
+                    y=alt.Y('残量:Q', title='残量 (%)', scale=alt.Scale(domain=[0, 100]), axis=alt.Axis(grid=False, labelColor='#10b981', titleColor='#10b981')),
+                    color=alt.Color('指標:N', scale=color_scale, legend=alt.Legend(title=None, labelColor=text_color, direction='horizontal', orient='bottom'))
+                )
+                
+                chart = alt.layer(power_chart, soc_chart).resolve_scale(
+                    y='independent'
+                ).properties(
+                    height=180
+                ).configure_view(
+                    strokeOpacity=0
+                ).configure(
+                    background='transparent'
+                )
+            else:
+                # 通常の1軸グラフ
+                plot_cols = [rename_dict[c] for c in y_cols if c in rename_dict]
+                df_plot_renamed = df_reset.rename(columns=rename_dict)
+                df_melt = df_plot_renamed.melt("timestamp", value_vars=plot_cols, var_name="指標", value_name="値")
+                
+                chart = alt.Chart(df_melt).mark_line(interpolate='monotone', strokeWidth=1.5).encode(
+                    x=alt.X('timestamp:T', title=None, scale=x_scale, axis=alt.Axis(format=x_axis_format, grid=True, gridColor=grid_color, labelColor=text_color)),
+                    y=alt.Y('値:Q', title=y_label, axis=alt.Axis(grid=True, gridColor=grid_color, labelColor=text_color, titleColor=text_color)),
+                    color=alt.Color('指標:N', scale=color_scale, legend=alt.Legend(title=None, labelColor=text_color, direction='horizontal', orient='bottom')),
+                    tooltip=[
+                        alt.Tooltip('timestamp:T', title='時刻', format='%m/%d %H:%M'),
+                        alt.Tooltip('指標:N', title='項目'),
+                        alt.Tooltip('値:Q', title='値')
+                    ]
+                ).properties(
+                    height=180
+                ).configure_view(
+                    strokeOpacity=0
+                ).configure(
+                    background='transparent'
+                )
+            
+            st.altair_chart(chart, use_container_width=True)
     
             if chart_option == "☀️ 太陽光発電 (W)":
                 draw_altair_chart_compact(df_th_plot, ["pv_w"], "W")
