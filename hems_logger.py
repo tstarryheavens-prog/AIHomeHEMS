@@ -126,19 +126,30 @@ def check_and_apply_time_based_battery_schedule(client, config=None):
             from database import get_latest_schedule
             latest_sched = get_latest_schedule()
             
-            # 安全フォールバック: DBにスケジュールがない、または日付が古い場合の対応
+            # 安全フォールバック: DBにスケジュールがない、または日付が古い場合は即座に最新天気予報から自動再計算
             target_soc = 0
-            is_schedule_valid = False
+            today_str = now_dt.strftime("%Y-%m-%d")
+            need_recalculate = False
+            
             if latest_sched:
                 sched_date = latest_sched.get("target_date")
-                today_str = now_dt.strftime("%Y-%m-%d")
-                if sched_date and sched_date >= today_str:
-                    target_soc = latest_sched.get("target_night_soc", 0)
-                    is_schedule_valid = True
-                    
-            if not is_schedule_valid:
-                # AI予測スケジュールが取得できなかった場合の安全デフォルト（FIT期間中は100%充電、卒FIT後は50%充電）
-                target_soc = 100.0 if is_fit_active else 50.0
+                if not sched_date or sched_date < today_str:
+                    need_recalculate = True
+                else:
+                    target_soc = latest_sched.get("target_night_soc", 100.0 if is_fit_active else 50.0)
+            else:
+                need_recalculate = True
+
+            if need_recalculate:
+                try:
+                    from optimizer import PostFitOptimizer
+                    opt = PostFitOptimizer(config_path)
+                    new_plan = opt.calculate_optimal_schedule()
+                    target_soc = new_plan.get("target_night_soc", 100.0 if is_fit_active else 50.0)
+                    print(f"[HEMSLogger] Automatically refreshed today's AI weather schedule: {new_plan.get('weather_condition')} (Est PV: {new_plan.get('est_pv_kwh')} kWh)")
+                except Exception as rec_err:
+                    print(f"[HEMSLogger] Error auto-calculating schedule: {rec_err}")
+                    target_soc = 100.0 if is_fit_active else 50.0
 
             # 時間帯およびFIT条件に応じた制御アルゴリズム
             if is_yorytoku_night:
