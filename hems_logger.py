@@ -2,6 +2,7 @@ import time
 import os
 import csv
 import random
+import math
 import requests
 import yaml
 from datetime import datetime, timezone, timedelta
@@ -143,7 +144,7 @@ def check_and_apply_time_based_battery_schedule(client, config=None):
             if need_recalculate:
                 try:
                     from optimizer import PostFitOptimizer
-                    opt = PostFitOptimizer(config_path)
+                    opt = PostFitOptimizer()
                     new_plan = opt.calculate_optimal_schedule()
                     target_soc = new_plan.get("target_night_soc", 100.0 if is_fit_active else 50.0)
                     print(f"[HEMSLogger] Automatically refreshed today's AI weather schedule: {new_plan.get('weather_condition')} (Est PV: {new_plan.get('est_pv_kwh')} kWh)")
@@ -326,14 +327,51 @@ def poll_and_log_all_data(config_path="config.yaml"):
         net_balance = estimated_house_load - pv_w + batt_w
         grid_w = int(round(net_balance))
     
-    # 各部屋・分電盤回路の消費電力(W)推計・割り当て
-    total_load_w = max(300, pv_w - batt_w + grid_w)
-    living_w = round(total_load_w * 0.35, 1)
-    aircon_w = round(total_load_w * 0.25, 1)
-    kitchen_w = round(total_load_w * 0.15, 1)
-    master_bed_w = round(total_load_w * 0.10, 1)
-    kids_room_w = round(total_load_w * 0.08, 1)
-    others_w = round(total_load_w * 0.07, 1)
+    # 各部屋・分電盤回路の消費電力(W)推計・割り当て (時間帯および実電力連動モデル)
+    total_load_w = max(180, pv_w - batt_w + grid_w)
+    
+    # 時間帯ごとの生活活動パターン係数
+    cur_hour = datetime.now(JST).hour
+    cur_sec = datetime.now(JST).second
+    
+    # わずかな微小ゆらぎ (±3%)
+    f_noise = 1.0 + (math.sin(cur_sec * 0.2) * 0.03)
+    
+    if 6 <= cur_hour < 9: # 朝: キッチン・リビング・エアコンが活動
+        r_living = 0.35
+        r_aircon = 0.25
+        r_kitchen = 0.22
+        r_master = 0.06
+        r_kids = 0.06
+        r_others = 0.06
+    elif 9 <= cur_hour < 17: # 昼: エアコン・リビング中心
+        r_living = 0.32
+        r_aircon = 0.38
+        r_kitchen = 0.12
+        r_master = 0.05
+        r_kids = 0.05
+        r_others = 0.08
+    elif 17 <= cur_hour < 22: # 夜: 全部屋・IH調理・エアコン稼働ピーク
+        r_living = 0.34
+        r_aircon = 0.26
+        r_kitchen = 0.20
+        r_master = 0.08
+        r_kids = 0.06
+        r_others = 0.06
+    else: # 深夜 (22:00〜06:00): 主寝室エアコン・待機電力主体
+        r_living = 0.15
+        r_aircon = 0.45
+        r_kitchen = 0.05
+        r_master = 0.22
+        r_kids = 0.05
+        r_others = 0.08
+
+    living_w = round(total_load_w * r_living * f_noise, 1)
+    aircon_w = round(total_load_w * r_aircon * (1.0 + math.cos(cur_sec * 0.3) * 0.04), 1)
+    kitchen_w = round(total_load_w * r_kitchen, 1)
+    master_bed_w = round(total_load_w * r_master, 1)
+    kids_room_w = round(total_load_w * r_kids, 1)
+    others_w = round(max(10.0, total_load_w - (living_w + aircon_w + kitchen_w + master_bed_w + kids_room_w)), 1)
     
     # 1. SQLite DBへの保存
     save_telemetry(
