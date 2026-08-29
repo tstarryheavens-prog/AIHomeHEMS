@@ -327,51 +327,99 @@ def poll_and_log_all_data(config_path="config.yaml"):
         net_balance = estimated_house_load - pv_w + batt_w
         grid_w = int(round(net_balance))
     
-    # 各部屋・分電盤回路の消費電力(W)推計・割り当て (時間帯および実電力連動モデル)
+    # =========================================================================
+    # 🏠 各部屋・分岐回路の消費電力(W)の直接取得（HEMS Web / 分電盤・計測ユニット）
+    # =========================================================================
+    direct_rooms = {}
+    try:
+        if hems_config and hems_config.get("ip_address"):
+            hems_ip = hems_config.get("ip_address", "192.168.2.23")
+            session = requests.Session()
+            session.get(f"http://{hems_ip}/login.cgi", params={"user_id": hems_config.get("user_id", ""), "password": hems_config.get("password", ""), "hoji": "on"}, timeout=2)
+            
+            # 回路別モニタページ (best5.html / cost.html / monitor3.html / branch.html) の巡回パース
+            for p in ["/best5.html", "/cost.html", "/monitor3.html", "/branch.html"]:
+                try:
+                    session.get(f"http://{hems_ip}/onLoad_Notify?enter={p}", timeout=1.5)
+                    r_p = session.get(f"http://{hems_ip}{p}?action=poll", timeout=2)
+                    r_p.encoding = 'shift_jis'
+                    if r_p.status_code == 200 and "{" in r_p.text:
+                        m = re.search(r'\{.*\}', r_p.text, re.DOTALL)
+                        if m:
+                            d_p = json.loads(m.group(0))
+                            for k, v in d_p.items():
+                                if isinstance(v, str) and ("W" in v or "kW" in v or v.replace(".", "").isdigit()):
+                                    num_str = re.sub(r'[^0-9.]', '', v)
+                                    if num_str:
+                                        val = float(num_str) * (1000.0 if "kW" in v else 1.0)
+                                        if "aircon" in k.lower() or "エアコン" in k:
+                                            direct_rooms["エアコン"] = val
+                                        elif "living" in k.lower() or "リビング" in k:
+                                            direct_rooms["リビング"] = val
+                                        elif "kitchen" in k.lower() or "キッチン" in k or "ih" in k.lower():
+                                            direct_rooms["キッチン・IH"] = val
+                                        elif "bed" in k.lower() or "寝室" in k:
+                                            direct_rooms["主寝室"] = val
+                                        elif "kids" in k.lower() or "子供" in k:
+                                            direct_rooms["子供部屋"] = val
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    # 各部屋・分電盤回路の消費電力(W)推計・割り当て
     total_load_w = max(180, pv_w - batt_w + grid_w)
     
-    # 時間帯ごとの生活活動パターン係数
-    cur_hour = datetime.now(JST).hour
-    cur_sec = datetime.now(JST).second
-    
-    # わずかな微小ゆらぎ (±3%)
-    f_noise = 1.0 + (math.sin(cur_sec * 0.2) * 0.03)
-    
-    if 6 <= cur_hour < 9: # 朝: キッチン・リビング・エアコンが活動
-        r_living = 0.35
-        r_aircon = 0.25
-        r_kitchen = 0.22
-        r_master = 0.06
-        r_kids = 0.06
-        r_others = 0.06
-    elif 9 <= cur_hour < 17: # 昼: エアコン・リビング中心
-        r_living = 0.32
-        r_aircon = 0.38
-        r_kitchen = 0.12
-        r_master = 0.05
-        r_kids = 0.05
-        r_others = 0.08
-    elif 17 <= cur_hour < 22: # 夜: 全部屋・IH調理・エアコン稼働ピーク
-        r_living = 0.34
-        r_aircon = 0.26
-        r_kitchen = 0.20
-        r_master = 0.08
-        r_kids = 0.06
-        r_others = 0.06
-    else: # 深夜 (22:00〜06:00): 主寝室エアコン・待機電力主体
-        r_living = 0.15
-        r_aircon = 0.45
-        r_kitchen = 0.05
-        r_master = 0.22
-        r_kids = 0.05
-        r_others = 0.08
+    if direct_rooms and len(direct_rooms) >= 2:
+        living_w = round(direct_rooms.get("リビング", total_load_w * 0.35), 1)
+        aircon_w = round(direct_rooms.get("エアコン", total_load_w * 0.25), 1)
+        kitchen_w = round(direct_rooms.get("キッチン・IH", total_load_w * 0.15), 1)
+        master_bed_w = round(direct_rooms.get("主寝室", total_load_w * 0.10), 1)
+        kids_room_w = round(direct_rooms.get("子供部屋", total_load_w * 0.08), 1)
+        others_w = round(max(10.0, total_load_w - (living_w + aircon_w + kitchen_w + master_bed_w + kids_room_w)), 1)
+    else:
+        # 時間帯ごとの生活活動パターン係数
+        cur_hour = datetime.now(JST).hour
+        cur_sec = datetime.now(JST).second
+        
+        # わずかな微小ゆらぎ (±3%)
+        f_noise = 1.0 + (math.sin(cur_sec * 0.2) * 0.03)
+        
+        if 6 <= cur_hour < 9: # 朝: キッチン・リビング・エアコンが活動
+            r_living = 0.35
+            r_aircon = 0.25
+            r_kitchen = 0.22
+            r_master = 0.06
+            r_kids = 0.06
+            r_others = 0.06
+        elif 9 <= cur_hour < 17: # 昼: エアコン・リビング中心
+            r_living = 0.32
+            r_aircon = 0.38
+            r_kitchen = 0.12
+            r_master = 0.05
+            r_kids = 0.05
+            r_others = 0.08
+        elif 17 <= cur_hour < 22: # 夜: 全部屋・IH調理・エアコン稼働ピーク
+            r_living = 0.34
+            r_aircon = 0.26
+            r_kitchen = 0.20
+            r_master = 0.08
+            r_kids = 0.06
+            r_others = 0.06
+        else: # 深夜 (22:00〜06:00): 主寝室エアコン・待機電力主体
+            r_living = 0.15
+            r_aircon = 0.45
+            r_kitchen = 0.05
+            r_master = 0.22
+            r_kids = 0.05
+            r_others = 0.08
 
-    living_w = round(total_load_w * r_living * f_noise, 1)
-    aircon_w = round(total_load_w * r_aircon * (1.0 + math.cos(cur_sec * 0.3) * 0.04), 1)
-    kitchen_w = round(total_load_w * r_kitchen, 1)
-    master_bed_w = round(total_load_w * r_master, 1)
-    kids_room_w = round(total_load_w * r_kids, 1)
-    others_w = round(max(10.0, total_load_w - (living_w + aircon_w + kitchen_w + master_bed_w + kids_room_w)), 1)
+        living_w = round(total_load_w * r_living * f_noise, 1)
+        aircon_w = round(total_load_w * r_aircon * (1.0 + math.cos(cur_sec * 0.3) * 0.04), 1)
+        kitchen_w = round(total_load_w * r_kitchen, 1)
+        master_bed_w = round(total_load_w * r_master, 1)
+        kids_room_w = round(total_load_w * r_kids, 1)
+        others_w = round(max(10.0, total_load_w - (living_w + aircon_w + kitchen_w + master_bed_w + kids_room_w)), 1)
     
     # 1. SQLite DBへの保存
     save_telemetry(
