@@ -291,70 +291,65 @@ def poll_and_log_all_data(config_path="config.yaml"):
     pv_w = info.get("pv_w", 0)
     cum_pv_kwh = info.get("cum_pv_kwh", 0.0)
     
-    # HEMS Web Controllerからリアルタイム買電・売電Wおよび各部屋回路電力の直接取得
+    # HEMS Web Controllerからリアルタイム買電・売電Wの安全ポーリング (15秒キャッシュ ＆ 事前疎通チェック)
     grid_w = 0
     direct_rooms = {}
-    try:
-        if hems_config and hems_config.get("ip_address"):
-            hems_ip = hems_config.get("ip_address", "192.168.2.23")
-            
-            # Persistent session cache
-            if not hasattr(poll_and_log_all_data, "_hems_session"):
-                s = requests.Session()
-                s.get(f"http://{hems_ip}/login.cgi", params={"user_id": hems_config.get("user_id", ""), "password": hems_config.get("password", ""), "hoji": "on"}, timeout=2)
-                poll_and_log_all_data._hems_session = s
-            else:
-                s = poll_and_log_all_data._hems_session
-
-            # 1. リアルタイムエネルギーフロー (e-flow.html)
-            try:
-                s.get(f"http://{hems_ip}/onLoad_Notify?enter=/e-flow.html", timeout=1.0)
-                r_flow = s.get(f"http://{hems_ip}/e-flow.html?action=poll", timeout=1.5)
-                r_flow.encoding = 'shift_jis'
-                m_flow = re.search(r'\{.*\}', r_flow.text, re.DOTALL)
-                if m_flow:
-                    d_flow = json.loads(m_flow.group(0))
-                    trade_pow_str = d_flow.get("tTradePow") or d_flow.get("tTradeData") or "0"
-                    trade_val = float(trade_pow_str.replace(",", "").strip())
-                    if d_flow.get("tTradeDataUnit") == "kW":
-                        trade_val *= 1000.0
-                    trade_title = d_flow.get("tTradeTitle", "買電")
-                    if "売電" in trade_title or d_flow.get("iAddTradeArrow") == "in":
-                        grid_w = -int(round(trade_val))
+    
+    # 前回のHEMS取得結果キャッシュ
+    if not hasattr(poll_and_log_all_data, "_hems_cache"):
+        poll_and_log_all_data._hems_cache = {"time": 0, "grid_w": 0, "direct_rooms": {}}
+        
+    now_ts = time.time()
+    # 💡 ハングアップ防止: 15秒以内の連続アクセス時はキャッシュ値を返却してHEMS機器の過負荷を完全防止
+    if now_ts - poll_and_log_all_data._hems_cache["time"] < 15.0:
+        grid_w = poll_and_log_all_data._hems_cache["grid_w"]
+        direct_rooms = poll_and_log_all_data._hems_cache["direct_rooms"]
+    else:
+        try:
+            if hems_config and hems_config.get("ip_address") and hems_config.get("enabled", True):
+                hems_ip = hems_config.get("ip_address", "192.168.2.23")
+                
+                # 1. 事前疎通チェック (Pre-flight Socket Ping) - 0.5秒でポート80が開いているか安全確認
+                sock_check = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock_check.settimeout(0.5)
+                conn_res = sock_check.connect_ex((hems_ip, 80))
+                sock_check.close()
+                
+                if conn_res == 0: # 疎通OKの時のみHTTPリクエスト送信
+                    if not hasattr(poll_and_log_all_data, "_hems_session"):
+                        s = requests.Session()
+                        s.get(f"http://{hems_ip}/login.cgi", params={"user_id": hems_config.get("user_id", ""), "password": hems_config.get("password", ""), "hoji": "on"}, timeout=1.5)
+                        poll_and_log_all_data._hems_session = s
                     else:
-                        grid_w = int(round(trade_val))
-            except Exception:
-                pass
+                        s = poll_and_log_all_data._hems_session
 
-            # 2. 回路別モニタページ (best5.html / cost.html / monitor3.html / branch.html)
-            for p in ["/best5.html", "/cost.html", "/monitor3.html", "/branch.html"]:
-                try:
-                    s.get(f"http://{hems_ip}/onLoad_Notify?enter={p}", timeout=0.8)
-                    r_p = s.get(f"http://{hems_ip}{p}?action=poll", timeout=1.0)
-                    r_p.encoding = 'shift_jis'
-                    if r_p.status_code == 200 and "{" in r_p.text:
-                        m = re.search(r'\{.*\}', r_p.text, re.DOTALL)
-                        if m:
-                            d_p = json.loads(m.group(0))
-                            for k, v in d_p.items():
-                                if isinstance(v, str) and ("W" in v or "kW" in v or v.replace(".", "").isdigit()):
-                                    num_str = re.sub(r'[^0-9.]', '', v)
-                                    if num_str:
-                                        val = float(num_str) * (1000.0 if "kW" in v else 1.0)
-                                        if "aircon" in k.lower() or "エアコン" in k:
-                                            direct_rooms["エアコン"] = val
-                                        elif "living" in k.lower() or "リビング" in k:
-                                            direct_rooms["リビング"] = val
-                                        elif "kitchen" in k.lower() or "キッチン" in k or "ih" in k.lower():
-                                            direct_rooms["キッチン・IH"] = val
-                                        elif "bed" in k.lower() or "寝室" in k:
-                                            direct_rooms["主寝室"] = val
-                                        elif "kids" in k.lower() or "子供" in k:
-                                            direct_rooms["子供部屋"] = val
-                except Exception:
-                    pass
-    except Exception:
-        pass
+                    # リアルタイムエネルギーフロー (e-flow.html) のみ適度な頻度で安全取得
+                    try:
+                        s.get(f"http://{hems_ip}/onLoad_Notify?enter=/e-flow.html", timeout=1.0)
+                        r_flow = s.get(f"http://{hems_ip}/e-flow.html?action=poll", timeout=1.5)
+                        r_flow.encoding = 'shift_jis'
+                        m_flow = re.search(r'\{.*\}', r_flow.text, re.DOTALL)
+                        if m_flow:
+                            d_flow = json.loads(m_flow.group(0))
+                            trade_pow_str = d_flow.get("tTradePow") or d_flow.get("tTradeData") or "0"
+                            trade_val = float(trade_pow_str.replace(",", "").strip())
+                            if d_flow.get("tTradeDataUnit") == "kW":
+                                trade_val *= 1000.0
+                            trade_title = d_flow.get("tTradeTitle", "買電")
+                            if "売電" in trade_title or d_flow.get("iAddTradeArrow") == "in":
+                                grid_w = -int(round(trade_val))
+                            else:
+                                grid_w = int(round(trade_val))
+                                
+                            poll_and_log_all_data._hems_cache = {
+                                "time": now_ts,
+                                "grid_w": grid_w,
+                                "direct_rooms": direct_rooms
+                            }
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
     # フォールバック動的計算（全計測値からのエネルギー保存則算定）
     if grid_w == 0:

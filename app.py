@@ -163,7 +163,14 @@ else:
 # 4. ⚙️ システム設定 ＆ データ同期
 # ----------------------------------------------------
 st.sidebar.markdown("##### ⚙️ データ同期・自動更新")
-auto_refresh = st.sidebar.toggle("🔄 リアルタイム自動更新 (5s)", value=True)
+auto_refresh = st.sidebar.toggle("🔄 画面自動更新", value=True)
+refresh_sec = st.sidebar.selectbox(
+    "更新間隔:",
+    [5, 10, 15, 30, 60],
+    index=1, # デフォルト10秒（HEMS過負荷防止の安全設定）
+    format_func=lambda s: f"{s} 秒ごと",
+    key="sb_refresh_interval"
+)
 
 with st.sidebar.expander("📥 過去データ同期・抽出", expanded=False):
     if st.button("📥 直近14日分の履歴を同期", use_container_width=True):
@@ -458,7 +465,7 @@ elif bulk_status["processed_days"] > 0 and bulk_status["processed_days"] == bulk
 tab1, tab2, tab4, tab3 = st.tabs(["🎛️ ライブ", "🤖 AI制御", "💰 1ヶ月収支・利益明細", "🛡️ 診断・分析"])
 
 # フラグメント更新関数 (ページ全体の暗転チラつきを完全排除してサイレント更新)
-@st.fragment(run_every=5 if auto_refresh else None)
+@st.fragment(run_every=refresh_sec if auto_refresh else None)
 def render_tab1_live():
     # JMA防災情報（Storm Watch）の表示
     from weather_service import WeatherService
