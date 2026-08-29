@@ -291,57 +291,46 @@ def poll_and_log_all_data(config_path="config.yaml"):
     pv_w = info.get("pv_w", 0)
     cum_pv_kwh = info.get("cum_pv_kwh", 0.0)
     
-    # HEMS Web Controllerからリアルタイム買電・売電Wの直接取得試行
+    # HEMS Web Controllerからリアルタイム買電・売電Wおよび各部屋回路電力の直接取得
     grid_w = 0
-    try:
-        if hems_config and hems_config.get("ip_address"):
-            hems_ip = hems_config.get("ip_address", "192.168.2.23")
-            session = requests.Session()
-            login_url = f"http://{hems_ip}/login.cgi"
-            params = {"user_id": hems_config.get("user_id", ""), "password": hems_config.get("password", ""), "hoji": "on"}
-            session.get(login_url, params=params, timeout=2)
-            session.get(f"http://{hems_ip}/onLoad_Notify?enter=/e-flow.html", timeout=2)
-            r_flow = session.get(f"http://{hems_ip}/e-flow.html?action=poll", timeout=2)
-            r_flow.encoding = 'shift_jis'
-            import re, json
-            m_flow = re.search(r'\{.*\}', r_flow.text, re.DOTALL)
-            if m_flow:
-                d_flow = json.loads(m_flow.group(0))
-                # tTradePow or tTradeData
-                trade_pow_str = d_flow.get("tTradePow") or d_flow.get("tTradeData") or "0"
-                trade_val = float(trade_pow_str.replace(",", "").strip())
-                if d_flow.get("tTradeDataUnit") == "kW":
-                    trade_val *= 1000.0
-                
-                trade_title = d_flow.get("tTradeTitle", "買電")
-                if "売電" in trade_title or d_flow.get("iAddTradeArrow") == "in":
-                    grid_w = -int(round(trade_val)) # 売電はマイナス表記
-                else:
-                    grid_w = int(round(trade_val))  # 買電はプラス表記
-    except Exception:
-        pass
-
-    # フォールバック動的計算（全計測値からのエネルギー保存則算定）
-    if grid_w == 0:
-        estimated_house_load = 550 # 標準家屋ベース負荷(W)
-        net_balance = estimated_house_load - pv_w + batt_w
-        grid_w = int(round(net_balance))
-    
-    # =========================================================================
-    # 🏠 各部屋・分岐回路の消費電力(W)の直接取得（HEMS Web / 分電盤・計測ユニット）
-    # =========================================================================
     direct_rooms = {}
     try:
         if hems_config and hems_config.get("ip_address"):
             hems_ip = hems_config.get("ip_address", "192.168.2.23")
-            session = requests.Session()
-            session.get(f"http://{hems_ip}/login.cgi", params={"user_id": hems_config.get("user_id", ""), "password": hems_config.get("password", ""), "hoji": "on"}, timeout=2)
             
-            # 回路別モニタページ (best5.html / cost.html / monitor3.html / branch.html) の巡回パース
+            # Persistent session cache
+            if not hasattr(poll_and_log_all_data, "_hems_session"):
+                s = requests.Session()
+                s.get(f"http://{hems_ip}/login.cgi", params={"user_id": hems_config.get("user_id", ""), "password": hems_config.get("password", ""), "hoji": "on"}, timeout=2)
+                poll_and_log_all_data._hems_session = s
+            else:
+                s = poll_and_log_all_data._hems_session
+
+            # 1. リアルタイムエネルギーフロー (e-flow.html)
+            try:
+                s.get(f"http://{hems_ip}/onLoad_Notify?enter=/e-flow.html", timeout=1.0)
+                r_flow = s.get(f"http://{hems_ip}/e-flow.html?action=poll", timeout=1.5)
+                r_flow.encoding = 'shift_jis'
+                m_flow = re.search(r'\{.*\}', r_flow.text, re.DOTALL)
+                if m_flow:
+                    d_flow = json.loads(m_flow.group(0))
+                    trade_pow_str = d_flow.get("tTradePow") or d_flow.get("tTradeData") or "0"
+                    trade_val = float(trade_pow_str.replace(",", "").strip())
+                    if d_flow.get("tTradeDataUnit") == "kW":
+                        trade_val *= 1000.0
+                    trade_title = d_flow.get("tTradeTitle", "買電")
+                    if "売電" in trade_title or d_flow.get("iAddTradeArrow") == "in":
+                        grid_w = -int(round(trade_val))
+                    else:
+                        grid_w = int(round(trade_val))
+            except Exception:
+                pass
+
+            # 2. 回路別モニタページ (best5.html / cost.html / monitor3.html / branch.html)
             for p in ["/best5.html", "/cost.html", "/monitor3.html", "/branch.html"]:
                 try:
-                    session.get(f"http://{hems_ip}/onLoad_Notify?enter={p}", timeout=1.5)
-                    r_p = session.get(f"http://{hems_ip}{p}?action=poll", timeout=2)
+                    s.get(f"http://{hems_ip}/onLoad_Notify?enter={p}", timeout=0.8)
+                    r_p = s.get(f"http://{hems_ip}{p}?action=poll", timeout=1.0)
                     r_p.encoding = 'shift_jis'
                     if r_p.status_code == 200 and "{" in r_p.text:
                         m = re.search(r'\{.*\}', r_p.text, re.DOTALL)
@@ -366,6 +355,12 @@ def poll_and_log_all_data(config_path="config.yaml"):
                     pass
     except Exception:
         pass
+
+    # フォールバック動的計算（全計測値からのエネルギー保存則算定）
+    if grid_w == 0:
+        estimated_house_load = 550 # 標準家屋ベース負荷(W)
+        net_balance = estimated_house_load - pv_w + batt_w
+        grid_w = int(round(net_balance))
 
     # 各部屋・分電盤回路の消費電力(W)推計・割り当て
     total_load_w = max(180, pv_w - batt_w + grid_w)
