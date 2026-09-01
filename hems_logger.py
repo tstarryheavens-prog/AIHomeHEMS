@@ -316,18 +316,37 @@ def poll_and_log_all_data(config_path="config.yaml"):
                 sock_check.close()
                 
                 if conn_res == 0: # 疎通OKの時のみHTTPリクエスト送信
-                    if not hasattr(poll_and_log_all_data, "_hems_session"):
+                    def get_authenticated_hems_session():
                         s = requests.Session()
-                        s.get(f"http://{hems_ip}/login.cgi", params={"user_id": hems_config.get("user_id", ""), "password": hems_config.get("password", ""), "hoji": "on"}, timeout=1.5)
-                        poll_and_log_all_data._hems_session = s
-                    else:
-                        s = poll_and_log_all_data._hems_session
+                        login_url = f"http://{hems_ip}/login.cgi"
+                        params = {
+                            "user_id": hems_config.get("user_id", ""),
+                            "password": hems_config.get("password", ""),
+                            "hoji": "on",
+                            "disp_url": ""
+                        }
+                        s.get(login_url, params=params, timeout=2.0)
+                        return s
 
-                    # リアルタイムエネルギーフロー (e-flow.html) のみ適度な頻度で安全取得
+                    if not hasattr(poll_and_log_all_data, "_hems_session") or poll_and_log_all_data._hems_session is None:
+                        poll_and_log_all_data._hems_session = get_authenticated_hems_session()
+
+                    s = poll_and_log_all_data._hems_session
+
+                    # リアルタイムエネルギーフロー (e-flow.html) の取得
                     try:
-                        s.get(f"http://{hems_ip}/onLoad_Notify?enter=/e-flow.html", timeout=1.0)
-                        r_flow = s.get(f"http://{hems_ip}/e-flow.html?action=poll", timeout=1.5)
+                        s.get(f"http://{hems_ip}/onLoad_Notify?enter=/e-flow.html", timeout=1.5)
+                        r_flow = s.get(f"http://{hems_ip}/e-flow.html?action=poll", timeout=2.0)
                         r_flow.encoding = 'shift_jis'
+                        
+                        # セッションが切れている（ログイン画面に戻された）場合は再ログインして再試行
+                        if "login.cgi" in r_flow.text or "ログイン" in r_flow.text or r_flow.status_code != 200:
+                            s = get_authenticated_hems_session()
+                            poll_and_log_all_data._hems_session = s
+                            s.get(f"http://{hems_ip}/onLoad_Notify?enter=/e-flow.html", timeout=1.5)
+                            r_flow = s.get(f"http://{hems_ip}/e-flow.html?action=poll", timeout=2.0)
+                            r_flow.encoding = 'shift_jis'
+
                         m_flow = re.search(r'\{.*\}', r_flow.text, re.DOTALL)
                         if m_flow:
                             d_flow = json.loads(m_flow.group(0))
@@ -346,8 +365,9 @@ def poll_and_log_all_data(config_path="config.yaml"):
                                 "grid_w": grid_w,
                                 "direct_rooms": direct_rooms
                             }
-                    except Exception:
-                        pass
+                    except Exception as poll_ex:
+                        # 通信例外時は次回再ログインするようにセッション破棄
+                        poll_and_log_all_data._hems_session = None
         except Exception:
             pass
 
