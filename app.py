@@ -844,15 +844,15 @@ def render_tab1_live():
             
             st.altair_chart(chart, use_container_width=True)
     
-            if chart_option == "☀️ 太陽光発電 (W)":
-                draw_altair_chart_compact(df_th_plot, ["pv_w"], "W")
-            elif chart_option == "⚡ 買電電力 (W)":
-                draw_altair_chart_compact(df_th_plot, ["grid_w"], "W")
-            elif chart_option == "🔋 蓄電池 SOC (%) ＆ 充放電 (W)":
-                draw_altair_chart_compact(df_th_plot, ["battery_soc"], "%")
-                draw_altair_chart_compact(df_th_plot, ["battery_w"], "W")
-            else:
-                draw_altair_chart_compact(df_th_plot, ["pv_w", "grid_w", "battery_w", "battery_soc"], "W")
+        if chart_option == "☀️ 太陽光発電 (W)":
+            draw_altair_chart_compact(df_th_plot, ["pv_w"], "W")
+        elif chart_option == "⚡ 買電電力 (W)":
+            draw_altair_chart_compact(df_th_plot, ["grid_w"], "W")
+        elif chart_option == "🔋 蓄電池 SOC (%) ＆ 充放電 (W)":
+            draw_altair_chart_compact(df_th_plot, ["battery_soc"], "%")
+            draw_altair_chart_compact(df_th_plot, ["battery_w"], "W")
+        else:
+            draw_altair_chart_compact(df_th_plot, ["pv_w", "grid_w", "battery_w", "battery_soc"], "W")
     
     st.divider()
 
