@@ -371,7 +371,17 @@ def poll_and_log_all_data(config_path="config.yaml"):
         except Exception:
             pass
 
-    # フォールバック動的計算（全計測値からのエネルギー保存則算定）
+    # 💡 ニチコンT5およびHEMSからの買電・売電電力の優先統合
+    # 1. ニチコンT5からのハードウェア実測値（ECHONET Lite）を最優先
+    nichicon_grid_w = info.get("grid_w")
+    if nichicon_grid_w is not None:
+        grid_w = nichicon_grid_w
+
+    # 2. ニチコン側で系統電力未定義の場合、HEMS Web (e-flow.html) の計測値を採用
+    if grid_w == 0 and poll_and_log_all_data._hems_cache.get("grid_w", 0) != 0:
+        grid_w = poll_and_log_all_data._hems_cache["grid_w"]
+
+    # 3. 未取得時のフォールバック動的計算（全計測値からのエネルギー保存則算定）
     if grid_w == 0:
         estimated_house_load = 550 # 標準家屋ベース負荷(W)
         net_balance = estimated_house_load - pv_w + batt_w
