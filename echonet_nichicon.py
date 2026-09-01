@@ -134,17 +134,9 @@ class NichiconEchonetClient:
             mode_str = f"UNKNOWN ({hex(mode_code)})"
 
 
-        # 3. 系統買電・売電電力 (分電盤 Class 0x0287 / 計測ユニット 0x0288 / 蓄電池系統電力)
-        edt_grid_w = self._query(bytes([0x02, 0x87, 0x01]), 0xE0) # 分電盤 主幹電力
-        if not edt_grid_w:
-            edt_grid_w = self._query(bytes([0x02, 0x88, 0x01]), 0xE7) # 計測ユニット 瞬時電力
-        if not edt_grid_w:
-            edt_grid_w = self._query(CLASS_STORAGE_BATTERY, 0xEB) # 蓄電池コントローラ系統電力
-
-        grid_w_val = None
-        if edt_grid_w:
-            grid_w_val = int.from_bytes(edt_grid_w, byteorder='big', signed=True)
-
+        # 3. 系統買電・売電電力
+        # ※ニチコンT5 ECHONET Lite (Class 0x027D) は蓄電池本体プロトコルであり、系統買電量(EPC 0xE0)は実装されていないため、
+        # 買電・売電実測値はHEMS Web (e-flow.html の tTradeData) より正確に取得します。
         return {
             "connected": True,
             "is_mock": False,
@@ -152,7 +144,7 @@ class NichiconEchonetClient:
             "power_w": pow_val,
             "battery_wh": wh_val,
             "pv_w": pv_w_val,
-            "grid_w": grid_w_val,
+            "grid_w": None,
             "cum_pv_kwh": round(pv_cum_val, 1),
             "cum_discharge_kwh": dis_val,
             "cum_charge_kwh": cha_val,
