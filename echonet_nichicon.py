@@ -1,6 +1,7 @@
 import socket
 import struct
 import random
+import time
 
 # ECHONET Lite Constant definitions
 ENET_PORT = 3610
