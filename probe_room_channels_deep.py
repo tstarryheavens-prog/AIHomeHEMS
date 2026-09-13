@@ -9,7 +9,7 @@ def probe_hems_web():
     with open("config.yaml", "r", encoding="utf-8") as f:
         conf = yaml.safe_load(f).get("hems_controller", {})
         
-    ip = conf.get("ip_address", "192.168.2.23")
+    ip = conf.get("ip_address", "192.168.1.100")
     user_id = conf.get("user_id", "")
     password = conf.get("password", "")
     
@@ -60,7 +60,7 @@ def probe_hems_web():
 
 def probe_echonet_distribution_boards():
     print("\n=== 2. Probing ECHONET Lite Distribution Board / Power Meter (Class 0x0287 / 0x0288) ===")
-    ips_to_test = ["192.168.2.23", "192.168.2.12"]
+    ips_to_test = ["192.168.1.100", "192.168.1.200"]
     
     for target_ip in ips_to_test:
         for port in [3610, 1369]:

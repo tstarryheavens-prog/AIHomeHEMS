@@ -2,7 +2,7 @@ import requests
 import re
 import socket
 
-ip = "192.168.2.23"
+ip = "192.168.1.100"
 print(f"=== Probing HEMS Controller at {ip} ===")
 
 # 1. Probe Web pages & common CGIs / paths
@@ -23,8 +23,8 @@ for p in paths:
     except Exception as e:
         print(f"  /{p:15s} -> Error {e}")
 
-# 2. Probe ECHONET Lite on 192.168.2.23 (Power Distribution Board 0x0287, Metering 0x0288, Controller 0x05FF)
-print("\n=== Probing ECHONET Lite Classes on 192.168.2.23 ===")
+# 2. Probe ECHONET Lite on 192.168.1.100 (Power Distribution Board 0x0287, Metering 0x0288, Controller 0x05FF)
+print("\n=== Probing ECHONET Lite Classes on 192.168.1.100 ===")
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.settimeout(1.5)
 

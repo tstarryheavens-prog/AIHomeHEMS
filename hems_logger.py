@@ -10,6 +10,7 @@ import re
 import json
 from datetime import datetime, timezone, timedelta
 from echonet_nichicon import NichiconEchonetClient
+from universal_echonet import UniversalEchonetClient
 from database import save_telemetry, save_room_telemetry, get_connection
 
 JST = timezone(timedelta(hours=9))
@@ -28,11 +29,11 @@ def init_csv_log():
             ])
 
 def fetch_hems_web_status(hems_config=None):
-    """HEMS Web コントローラ (192.168.2.23) への自動ログインと状態チェック"""
+    """HEMS Web コントローラ (192.168.1.100) への自動ログインと状態チェック"""
     if not hems_config:
-        hems_config = {"ip_address": "192.168.2.23", "user_id": "", "password": ""}
+        hems_config = {"ip_address": "192.168.1.100", "user_id": "", "password": ""}
         
-    hems_ip = hems_config.get("ip_address", "192.168.2.23")
+    hems_ip = hems_config.get("ip_address", "192.168.1.100")
     user_id = hems_config.get("user_id", "")
     password = hems_config.get("password", "")
     
@@ -121,11 +122,24 @@ def check_and_apply_time_based_battery_schedule(client, config=None):
             print(f"[HEMSLogger] Storm Watch Active! Forcing CHARGE mode (0x42).")
         else:
             # 2. 通常スケジュール制御
-            # 中部電力「夜とく」ナイトタイム判定 (21:00〜07:00)
-            is_yorytoku_night = (now_hour >= 21 or now_hour < 7)
+            tariff = config.get("electricity_tariff", {})
+            n_start = tariff.get("night_start_hour", 21)
+            n_end = tariff.get("night_end_hour", 7)
+            if n_start > n_end:
+                is_yorytoku_night = (now_hour >= n_start or now_hour < n_end)
+            else:
+                is_yorytoku_night = (n_start <= now_hour < n_end)
             
-            # 蓄電池寿命最適化 JIT充電時間帯 (03:00〜06:30)
-            is_jit_charge_time = (3 <= now_hour < 6) or (now_hour == 6 and now_minute <= 30)
+            # 蓄電池寿命最適化 JIT充電時間帯
+            jit_start_h = tariff.get("optimal_charge_start_hour", 3)
+            jit_start_m = tariff.get("optimal_charge_start_min", 0)
+            jit_end_h = tariff.get("optimal_charge_end_hour", 6)
+            jit_end_m = tariff.get("optimal_charge_end_min", 30)
+
+            is_jit_charge_time = (
+                (now_hour > jit_start_h or (now_hour == jit_start_h and now_minute >= jit_start_m)) and
+                (now_hour < jit_end_h or (now_hour == jit_end_h and now_minute <= jit_end_m))
+            )
             
             from database import get_latest_schedule
             latest_sched = get_latest_schedule()
@@ -246,25 +260,31 @@ def check_and_apply_time_based_battery_schedule(client, config=None):
     if not success:
         print("[HEMSLogger] CRITICAL: Failed to update battery mode after 3 attempts.")
 
-    # 💡 2重安全装置: ニチコンT5本体のハードウェア内部タイマー (EPC 0xC3/0xC4) へも時刻設定を同期書き込み
-    # 万が一HEMSプログラムが一時的に停止した場合でも、蓄電池基板自体が03:00〜06:30に自立自動充電を実行
+    # 💡 2重安全装置: ハードウェア内部タイマー (EPC 0xC3/0xC4) へも時刻設定を同期書き込み (ニチコン等対応機)
     try:
         if not hasattr(check_and_apply_time_based_battery_schedule, "_timer_synced"):
+            tariff = config.get("electricity_tariff", {})
+            c_start_h = tariff.get("optimal_charge_start_hour", 3)
+            c_start_m = tariff.get("optimal_charge_start_min", 0)
+            c_end_h = tariff.get("optimal_charge_end_hour", 6)
+            c_end_m = tariff.get("optimal_charge_end_min", 30)
+            d_end_h = tariff.get("night_start_hour", 21)
+
             client.set_battery_timer_schedule(
-                charge_start_h=3, charge_start_m=0,
-                charge_end_h=6, charge_end_m=30,
-                discharge_start_h=6, discharge_start_m=35,
-                discharge_end_h=21, discharge_end_m=0
+                charge_start_h=c_start_h, charge_start_m=c_start_m,
+                charge_end_h=c_end_h, charge_end_m=c_end_m,
+                discharge_start_h=c_end_h, discharge_start_m=(c_end_m + 5) % 60,
+                discharge_end_h=d_end_h, discharge_end_m=0
             )
             check_and_apply_time_based_battery_schedule._timer_synced = True
-            print("[HEMSLogger] Successfully synced hardware timer schedule to Nichicon T5 board (03:00-06:30 Charge).")
+            print(f"[HEMSLogger] Successfully synced hardware timer schedule to board ({c_start_h:02d}:{c_start_m:02d}-{c_end_h:02d}:{c_end_m:02d} Charge).")
     except Exception as t_err:
         print(f"[HEMSLogger] Hardware timer sync skipped or failed: {t_err}")
 
 
 def poll_and_log_all_data(config_path="config.yaml"):
     """
-    全機器（ニチコンT5 192.168.2.12, HEMS 192.168.2.23, 各部屋回路）のデータを一括取得してデータベースおよびCSVログに記録
+    全機器（蓄電池, HEMS, 各部屋回路）のデータを一括取得してデータベースおよびCSVログに記録
     """
     init_csv_log()
     
@@ -276,10 +296,21 @@ def poll_and_log_all_data(config_path="config.yaml"):
     except Exception:
         config = {}
         
-    nichicon_ip = config.get("nichicon", {}).get("ip_address", "192.168.2.12")
-    nichicon_port = config.get("nichicon", {}).get("port", 3610)
+    batt_cfg = config.get("battery_system", {})
+    if not batt_cfg:
+        batt_cfg = config.get("nichicon", {})
+
+    battery_ip = batt_cfg.get("ip_address", "192.168.1.200")
+    battery_port = batt_cfg.get("port", 3610)
+    battery_mfg = batt_cfg.get("manufacturer", "nichicon")
+    battery_enabled = batt_cfg.get("enabled", True)
     
-    client = NichiconEchonetClient(ip_address=nichicon_ip, port=nichicon_port, enabled=True)
+    client = UniversalEchonetClient(
+        ip_address=battery_ip,
+        port=battery_port,
+        manufacturer=battery_mfg,
+        enabled=battery_enabled
+    )
     check_and_apply_time_based_battery_schedule(client, config=config)
     info = client.get_full_system_info()
     
@@ -310,7 +341,7 @@ def poll_and_log_all_data(config_path="config.yaml"):
     else:
         try:
             if hems_config and hems_config.get("ip_address") and hems_config.get("enabled", True):
-                hems_ip = hems_config.get("ip_address", "192.168.2.23")
+                hems_ip = hems_config.get("ip_address", "192.168.1.100")
                 
                 # 1. 事前疎通チェック (Pre-flight Socket Ping) - 0.5秒でポート80が開いているか安全確認
                 sock_check = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

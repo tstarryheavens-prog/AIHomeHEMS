@@ -43,8 +43,8 @@ def check_tcp_echonet(ip):
     return str(ip), results
 
 def main():
-    print("=== Scanning 192.168.2.0/24 for TCP 3610 ECHONET Lite Distribution Board / Room Circuits ===")
-    network = ipaddress.ip_network("192.168.2.0/24", strict=False)
+    print("=== Scanning 192.168.1.0/24 for TCP 3610 ECHONET Lite Distribution Board / Room Circuits ===")
+    network = ipaddress.ip_network("192.168.1.0/24", strict=False)
     with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
         futures = {executor.submit(check_tcp_echonet, ip): ip for ip in network.hosts()}
         for future in concurrent.futures.as_completed(futures):

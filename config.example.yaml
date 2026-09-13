@@ -1,0 +1,122 @@
+# ==============================================================================
+# AI Home HEMS - 汎用スマートエネルギーOS 設定ファイル テンプレート
+# ==============================================================================
+# 本設定はWeb UI（タブ「⚙️ システム設定・汎用化」）からGUIで直感的に変更・保存できます。
+# 手動設定する場合は、このファイルを config.yaml としてコピーして編集してください。
+# cp config.example.yaml config.yaml
+
+# ------------------------------------------------------------------------------
+# 1. 蓄電池 / V2H システム設定 (日本国内主要メーカー対応)
+# ------------------------------------------------------------------------------
+# 対応メーカー(manufacturer):
+#   - nichicon      : ニチコン (Nichicon ESS / V2H T5系, TCP 3610/1369)
+#   - panasonic     : パナソニック (創蓄連携システム / Li-ion, UDP 3610)
+#   - omron         : オムロン (KPBP-A系 フレキシブル蓄電, UDP 3610)
+#   - dia_tabuchi   : ダイヤゼブラ電機 / 旧田淵電機 (EneTelus, UDP 3610)
+#   - sharp         : シャープ (クラウド蓄電池 / SUNVISTA, UDP 3610)
+#   - kyocera       : 京セラ (Enerezza クレイ型蓄電池, UDP 3610)
+#   - choshu        : 長州産業 (Smart PV Multi, UDP 3610)
+#   - generic_echonet: 汎用 ECHONET Lite 規格蓄電池 (Class 0x027D, UDP 3610)
+#   - tesla         : テスラ (Powerwall - Local Gateway API)
+#   - simulation    : デモ・シミュレーションモード (実機不要)
+battery_system:
+  manufacturer: "nichicon"
+  name: "ニチコン (Nichicon ESS / V2H T5系)"
+  protocol: "echonet_tcp"           # echonet_tcp または echonet_udp
+  ip_address: "192.168.1.200"       # 蓄電池のIPアドレス (自動スキャンで検出可能)
+  port: 3610                        # ECHONET Liteポート (通常3610、ニチコン独自1369等)
+  enabled: true
+  battery_capacity_kwh: 14.9        # 定格容量 (kWh)
+  battery_max_soc: 100.0            # 最大充電率 (%)
+  battery_min_soc: 20.0             # 最小保護残量 (%)
+
+# ------------------------------------------------------------------------------
+# 2. 太陽光発電 (PV) 設定
+# ------------------------------------------------------------------------------
+solar_pv:
+  pv_capacity_kw: 4.0               # 太陽光パネル公称出力容量 (kW)
+  pv_efficiency: 0.85               # パワコン変換効率 (0.80〜0.90)
+  enabled: true
+
+# ------------------------------------------------------------------------------
+# 3. 系統電力（買電・売電）計測方式
+# ------------------------------------------------------------------------------
+# 取得方式(source):
+#   - hems_web           : 住宅用HEMS Webコントローラー (CenteHTTPd / パナホーム等)
+#   - broute             : スマートメーター Bルート直接通信 (Wi-SUNドングル BP35A1)
+#   - echonet_smartmeter : LAN内 ECHONET Lite スマート電力量メータ (Class 0x0288)
+#   - battery_internal_ct: 蓄電池・パワコン内蔵 CTセンサー計測値
+#   - simulation         : シミュレーション (モックデータ生成)
+grid_measurement:
+  source: "hems_web"
+  name: "住宅用HEMSコントローラー (Web/CenteHTTPd)"
+  enabled: true
+
+# HEMSコントローラー認証設定 (source: "hems_web" 選択時に使用)
+hems_controller:
+  ip_address: "192.168.1.100"      # HEMS機器のIPアドレス
+  user_id: "YOUR_DEVICE_ID"         # 機器ID (9桁など)
+  password: "YOUR_PASSWORD"         # 登録コード (4桁など)
+  enabled: true
+
+# スマートメーター Bルート設定 (source: "broute" 選択時に使用)
+route:
+  port: "COM3"                      # Windows: COM3, Mac/Linux: /dev/ttyUSB0
+  baudrate: 115200
+  id: "YOUR_BROUTE_ID"              # 電力会社発行のBルート認証ID (32桁)
+  password: "YOUR_BROUTE_PASSWORD"  # Bルート認証パスワード (12桁)
+  enabled: false
+
+# ------------------------------------------------------------------------------
+# 4. 電気料金プラン設定 (全国10大電力会社 ＆ 新電力対応)
+# ------------------------------------------------------------------------------
+# 主な電力会社(company):
+#   - chuden : 中部電力ミライズ (スマートライフプラン【夜とく】、Eライフプラン等)
+#   - tepco  : 東京電力 (スマートライフプラン、夜トク8、夜トク12等)
+#   - kepco  : 関西電力 (はぴeタイムR等)
+#   - tohoku : 東北電力 (よりそう＋ナイト等)
+#   - kyushu : 九州電力 (電化でナイト等)
+#   - new_power: 新電力・市場連動型 (Looopでんき、オクトパス等)
+electricity_tariff:
+  company: "chuden"
+  plan: "smart_life_yorutoku"
+  name: "中部電力 スマートライフプラン【夜とく】"
+  night_start_hour: 21              # 深夜割安時間帯の開始時刻 (21:00)
+  night_end_hour: 7                 # 深夜割安時間帯の終了時刻 (07:00)
+  optimal_charge_start_hour: 3      # 蓄電池寿命最得 JIT充電開始 (03:00)
+  optimal_charge_start_min: 0
+  optimal_charge_end_hour: 6        # 蓄電池寿命最得 JIT充電完了 (06:30)
+  optimal_charge_end_min: 30
+  night_rate_yen_kwh: 16.30         # 深夜買電単価 (円/kWh)
+  day_rate_yen_kwh: 36.00           # 昼間買電単価 (円/kWh)
+
+# ------------------------------------------------------------------------------
+# 5. FIT (固定価格買取制度) 設定
+# ------------------------------------------------------------------------------
+fit_setting:
+  fit_end_date: "2026-11-27"        # FIT満了日 (YYYY-MM-DD)
+  pre_fit_sell_price: 31.0          # FIT期間中の売電単価 (円/kWh)
+  post_fit_sell_price: 8.5          # 卒FIT後の売電単価 (円/kWh)
+
+# ------------------------------------------------------------------------------
+# 6. 設置地域設定 (気象庁API ＆ 日射量予測用)
+# ------------------------------------------------------------------------------
+location:
+  name: "東京都 (東京・千代田区)"
+  latitude: 35.6812                 # 緯度 (Open-Meteo日射量予測用)
+  longitude: 139.7671               # 経度
+
+# ------------------------------------------------------------------------------
+# 7. 下位互換性エイリアス (従来のコードとの互換維持用)
+# ------------------------------------------------------------------------------
+nichicon:
+  enabled: true
+  ip_address: "192.168.1.200"
+  port: 3610
+
+system:
+  battery_capacity_kwh: 14.9
+  battery_max_soc: 100.0
+  battery_min_soc: 20.0
+  pv_capacity_kw: 4.0
+  pv_efficiency: 0.85

@@ -13,7 +13,7 @@ with open("config.yaml", "r", encoding="utf-8") as f:
     config = yaml.safe_load(f)
 
 hems_conf = config.get("hems_controller", {})
-ip = hems_conf.get("ip_address", "192.168.2.23")
+ip = hems_conf.get("ip_address", "192.168.1.100")
 user_id = hems_conf.get("user_id", "")
 password = hems_conf.get("password", "")
 

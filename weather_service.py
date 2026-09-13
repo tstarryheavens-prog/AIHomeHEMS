@@ -15,8 +15,8 @@ class WeatherService:
         
         loc = self.config.get("location", {})
         sys_cfg = self.config.get("system", {})
-        self.lat = loc.get("latitude", 35.1206)
-        self.lon = loc.get("longitude", 136.9092)
+        self.lat = loc.get("latitude", 35.6812)
+        self.lon = loc.get("longitude", 139.7671)
         self.pv_capacity_kw = sys_cfg.get("pv_capacity_kw", 4.0)
         self.pv_efficiency = sys_cfg.get("pv_efficiency", 0.85)
 

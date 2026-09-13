@@ -30,7 +30,7 @@ EPC_PV_POWER           = 0xE0 # 太陽光瞬時発電電力 (W)
 EPC_CUM_PV_KWH         = 0xE1 # 太陽光累積発電電力量 (0.1kWh)
 
 class NichiconEchonetClient:
-    def __init__(self, ip_address="192.168.2.12", port=3610, enabled=True):
+    def __init__(self, ip_address="192.168.1.200", port=3610, enabled=True):
         self.ip_address = ip_address
         self.port = port
         self.enabled = enabled

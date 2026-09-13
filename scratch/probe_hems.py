@@ -5,7 +5,7 @@ import re
 with open('config.yaml', 'r', encoding='utf-8') as f:
     config = yaml.safe_load(f)
 
-hems_ip = config.get('hems_controller', {}).get('ip_address', '192.168.2.23')
+hems_ip = config.get('hems_controller', {}).get('ip_address', '192.168.1.100')
 user_id = config.get('hems_controller', {}).get('user_id', '')
 password = config.get('hems_controller', {}).get('password', '')
 

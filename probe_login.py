@@ -3,7 +3,7 @@ import sys
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-ip = "192.168.2.23"
+ip = "192.168.1.100"
 
 cgis = [
     "top.cgi", "home.cgi", "main.cgi", "menu.cgi", "graph.cgi", "room.cgi",

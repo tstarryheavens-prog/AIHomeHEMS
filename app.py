@@ -10,10 +10,12 @@ from database import get_recent_telemetry, get_recent_room_telemetry, get_latest
 from optimizer import PostFitOptimizer
 from weather_service import WeatherService
 from echonet_nichicon import NichiconEchonetClient
-from network_scanner import scan_local_network_for_echonet, auto_update_config_with_discovered_ip
+from network_scanner import scan_local_network_for_echonet, auto_update_config_with_discovered_ip, scan_full_iot_network, apply_device_to_config
 from hems_logger import poll_and_log_all_data, CSV_LOG_PATH
 from hems_history_importer import fetch_hems_past_days_history
 from bulk_extract_history import start_bulk_extraction_async, get_bulk_extraction_status
+from config_manager import get_config_manager
+import presets_jp
 
 st.set_page_config(
     page_title="AI SMART ENERGY CONTROLLER",
@@ -62,8 +64,8 @@ except Exception:
     config = {}
 
 # 📡 デバイス接続リアルタイム判定（Nichicon T5 ＆ HEMS Web）
-nichicon_ip = config.get("nichicon", {}).get("ip_address", "192.168.2.12")
-hems_ip = config.get("hems_controller", {}).get("ip_address", "192.168.2.23")
+nichicon_ip = config.get("nichicon", {}).get("ip_address", "192.168.1.200")
+hems_ip = config.get("hems_controller", {}).get("ip_address", "192.168.1.100")
 
 # 1. データベース直近 telemetry ログから Nichicon 実機通信成功状況を判定
 is_nichicon_connected = False
@@ -461,8 +463,8 @@ elif bulk_status["processed_days"] > 0 and bulk_status["processed_days"] == bulk
     st.success(f"✅ 2016年からの全期間 ({bulk_status['extracted_records']}日分) の履歴ログの一括抽出・DB保存が完了しました！")
 
 
-# 🗂️ 4タブレイアウトの構築
-tab1, tab2, tab4, tab3 = st.tabs(["🎛️ ライブ", "🤖 AI制御", "💰 1ヶ月収支・利益明細", "🛡️ 診断・分析"])
+# 🗂️ 5タブレイアウトの構築
+tab1, tab2, tab4, tab3, tab5 = st.tabs(["🎛️ ライブ", "🤖 AI制御", "💰 1ヶ月収支・利益明細", "🛡️ 診断・分析", "⚙️ システム設定・汎用化"])
 
 # フラグメント更新関数 (ページ全体の暗転チラつきを完全排除してサイレント更新)
 @st.fragment(run_every=refresh_sec if auto_refresh else None)
@@ -1548,7 +1550,7 @@ with tab3:
             d_col1, d_col2 = st.columns(2)
             with d_col1:
                 st.markdown("**🔋 デバイス状態 (Class 0x027D)**")
-                st.write(f"・**IP/Port**: `{config.get('nichicon', {}).get('ip_address', '192.168.2.12')}:3610`")
+                st.write(f"・**IP/Port**: `{config.get('nichicon', {}).get('ip_address', '192.168.1.200')}:3610`")
                 st.write(f"・**動作モード**: `{batt_sys_info.get('mode', 'AUTO (0x45)')}`")
                 st.write(f"・**SOC**: `{batt_sys_info.get('soc', 65)} %` | **残容量**: `{batt_sys_info.get('battery_wh', 9685):,} Wh`")
             with d_col2:
@@ -1604,3 +1606,380 @@ with st.expander("⚙️ システム手動操作・同期（サイドバーが�
                 st.rerun()
             else:
                 st.info("同期対象の新しい履歴ログはありません。")
+
+# ==============================================================================
+# ⚙️ タブ5: システム個別設定 ＆ 汎用化コントロール (誰でも使えるオープン設計)
+# ==============================================================================
+with tab5:
+    st.header("⚙️ システム個別設定 ＆ 汎用化コントロール")
+    st.caption("日本国内のスマートホーム規格（ECHONET Lite / Bルート Wi-SUN）および国内主要メーカー機器、全国10大電力会社の料金プランに対応した汎用設定パネルです。")
+
+    cm = get_config_manager()
+    current_cfg = cm.load_config()
+
+    # --------------------------------------------------------------------------
+    # 📡 1. 宅内スマート機器 自動スキャン ＆ ワンクリック登録
+    # --------------------------------------------------------------------------
+    with st.container(border=True):
+        st.subheader("📡 1. 宅内スマート機器 自動スキャン ＆ 一括検出")
+        st.write("宅内LAN上のECHONET Lite対応機器（蓄電池、太陽光、スマートメーター、給湯器、エアコン）やHEMSコントローラーを自動探索します。")
+
+        col_scan1, col_scan2 = st.columns([2, 1])
+        with col_scan1:
+            do_scan = st.button("🔍 宅内ネットワークを自動スキャンする", use_container_width=True, type="primary")
+
+        if "discovered_devices" not in st.session_state:
+            st.session_state.discovered_devices = []
+
+        if do_scan:
+            with st.spinner("ECHONET Lite UDPマルチキャスト (224.0.23.0) ＆ サブネットポート走査中..."):
+                discovered = scan_full_iot_network()
+                st.session_state.discovered_devices = discovered
+                if discovered:
+                    st.success(f"🎉 {len(discovered)} 台のスマート機器・ネットワークデバイスを検出しました！")
+                else:
+                    st.warning("機器が見つかりませんでした。PCと機器が同一LAN（Wi-Fi/有線）に接続されているか確認してください。")
+
+        if st.session_state.discovered_devices:
+            st.markdown("##### 🔍 検出された機器一覧")
+            for idx, dev in enumerate(st.session_state.discovered_devices):
+                with st.expander(f"📌 {dev['name']} ({dev['category']}) - IP: {dev['ip']}", expanded=True):
+                    c_info, c_action = st.columns([3, 2])
+                    with c_info:
+                        st.markdown(f"**カテゴリ:** `{dev['category']}` | **通信プロトコル:** `{dev.get('protocol', 'tcp')}`")
+                        st.markdown(f"**詳細:** {dev.get('details', '')}")
+                        st.markdown(f"**オープンポート:** `{dev.get('ports', [])}`")
+                        if dev.get("live_url"):
+                            st.markdown(f"🌐 [Web管理画面を開く]({dev['live_url']})")
+
+                    with c_action:
+                        reg_role = dev.get("register_as")
+                        if reg_role == "battery" or "蓄電池" in dev["category"]:
+                            if st.button(f"🔋 蓄電池として設定に反映", key=f"btn_reg_batt_{idx}", use_container_width=True):
+                                apply_device_to_config(dev["ip"], "battery")
+                                st.success(f"蓄電池IPを {dev['ip']} に設定しました！")
+                                time.sleep(0.5)
+                                st.rerun()
+                        elif reg_role == "hems" or "HEMS" in dev["category"]:
+                            if st.button(f"🔌 HEMSコントローラーとして反映", key=f"btn_reg_hems_{idx}", use_container_width=True):
+                                apply_device_to_config(dev["ip"], "hems")
+                                st.success(f"HEMS IPを {dev['ip']} に設定しました！")
+                                time.sleep(0.5)
+                                st.rerun()
+                        else:
+                            col_sub1, col_sub2 = st.columns(2)
+                            with col_sub1:
+                                if st.button("🔋 蓄電池へ登録", key=f"btn_manual_batt_{idx}"):
+                                    apply_device_to_config(dev["ip"], "battery")
+                                    st.success(f"蓄電池IPを {dev['ip']} に反映しました")
+                                    time.sleep(0.5)
+                                    st.rerun()
+                            with col_sub2:
+                                if st.button("🔌 HEMSへ登録", key=f"btn_manual_hems_{idx}"):
+                                    apply_device_to_config(dev["ip"], "hems")
+                                    st.success(f"HEMS IPを {dev['ip']} に反映しました")
+                                    time.sleep(0.5)
+                                    st.rerun()
+
+    st.markdown("---")
+
+    # 設定フォーム
+    with st.form("settings_form"):
+        # ----------------------------------------------------------------------
+        # 🔋 2. 蓄電池 / V2H メーカー・規格設定
+        # ----------------------------------------------------------------------
+        st.subheader("🔋 2. 蓄電池 / V2H メーカー ＆ 接続設定")
+        batt_cfg = current_cfg.get("battery_system", {})
+        current_mfg = batt_cfg.get("manufacturer", "nichicon")
+
+        mfg_list = presets_jp.get_supported_manufacturers()
+        mfg_ids = [m["id"] for m in mfg_list]
+        mfg_names = [m["name"] for m in mfg_list]
+        default_mfg_idx = mfg_ids.index(current_mfg) if current_mfg in mfg_ids else 0
+
+        selected_mfg_idx = st.selectbox(
+            "蓄電池 / V2H メーカー・通信規格を選択 (日本国内主要メーカー)",
+            range(len(mfg_ids)),
+            format_func=lambda i: mfg_names[i],
+            index=default_mfg_idx,
+            help="メーカーを選択すると、通信プロトコル（ECHONET Lite UDP 3610 / ニチコンTCP等）や制御仕様が自動構成されます。"
+        )
+        selected_mfg_id = mfg_ids[selected_mfg_idx]
+        mfg_info = presets_jp.BATTERY_MANUFACTURERS.get(selected_mfg_id, {})
+        st.info(f"💡 **機器仕様概要:** {mfg_info.get('description', '')} (通信形式: `{mfg_info.get('protocol')}`)")
+
+        col_b1, col_b2, col_b3 = st.columns(3)
+        with col_b1:
+            bat_ip = st.text_input("蓄電池 IPアドレス", value=batt_cfg.get("ip_address", "192.168.1.200"))
+        with col_b2:
+            bat_port = st.number_input("ポート番号", value=int(batt_cfg.get("port", mfg_info.get("default_port", 3610))), min_value=1, max_value=65535)
+        with col_b3:
+            bat_enabled = st.checkbox("蓄電池連携を有効化", value=batt_cfg.get("enabled", True))
+
+        col_b4, col_b5, col_b6 = st.columns(3)
+        with col_b4:
+            bat_cap = st.number_input("定格バッテリー容量 (kWh)", value=float(batt_cfg.get("battery_capacity_kwh", mfg_info.get("default_capacity_kwh", 14.9))), step=0.1)
+        with col_b5:
+            bat_max_soc = st.slider("最大充電率 SOC (%)", 50.0, 100.0, float(batt_cfg.get("battery_max_soc", 100.0)), 1.0)
+        with col_b6:
+            bat_min_soc = st.slider("最小保護残量 SOC (%)", 10.0, 50.0, float(batt_cfg.get("battery_min_soc", 20.0)), 1.0)
+
+        st.markdown("---")
+
+        # ----------------------------------------------------------------------
+        # ⚡ 3. 電力会社 ＆ 電気料金プラン設定
+        # ----------------------------------------------------------------------
+        st.subheader("⚡ 3. 電力会社 ＆ 電気料金プラン設定")
+        st.caption("全国の電力会社、オール電化・深夜割引プラン、市場連動型プランを選択できます。選択したプランの標準時間帯と単価が自動反映されます。")
+
+        tariff_cfg = current_cfg.get("electricity_tariff", {})
+        current_comp = tariff_cfg.get("company", "chuden")
+
+        comp_list = presets_jp.get_supported_companies()
+        comp_ids = [c["id"] for c in comp_list]
+        comp_names = [c["name"] for c in comp_list]
+        default_comp_idx = comp_ids.index(current_comp) if current_comp in comp_ids else 0
+
+        col_p1, col_p2 = st.columns(2)
+        with col_p1:
+            selected_comp_idx = st.selectbox(
+                "電力会社を選択",
+                range(len(comp_ids)),
+                format_func=lambda i: comp_names[i],
+                index=default_comp_idx,
+                key="sb_company"
+            )
+            selected_comp_id = comp_ids[selected_comp_idx]
+
+        plans_for_comp = presets_jp.get_plans_for_company(selected_comp_id)
+        plan_ids = [p["id"] for p in plans_for_comp]
+        plan_names = [p["name"] for p in plans_for_comp]
+
+        current_plan_id = tariff_cfg.get("plan", "smart_life_yorutoku")
+        default_plan_idx = plan_ids.index(current_plan_id) if current_plan_id in plan_ids else 0
+
+        with col_p2:
+            selected_plan_idx = st.selectbox(
+                "料金プランを選択",
+                range(len(plan_ids)),
+                format_func=lambda i: plan_names[i],
+                index=default_plan_idx,
+                key="sb_plan"
+            )
+            selected_plan_id = plan_ids[selected_plan_idx]
+
+        active_plan_preset = plans_for_comp[selected_plan_idx]
+        st.info(f"📋 **プラン詳細:** {active_plan_preset.get('description', '')}")
+
+        # 時間帯および単価設定
+        col_t1, col_t2, col_t3, col_t4 = st.columns(4)
+        with col_t1:
+            t_night_start = st.number_input("深夜割安 開始時刻 (時)", min_value=0, max_value=23, value=int(tariff_cfg.get("night_start_hour", active_plan_preset.get("night_start_hour", 21))))
+        with col_t2:
+            t_night_end = st.number_input("深夜割安 終了時刻 (時)", min_value=0, max_value=23, value=int(tariff_cfg.get("night_end_hour", active_plan_preset.get("night_end_hour", 7))))
+        with col_t3:
+            t_night_rate = st.number_input("深夜買電単価 (円/kWh)", min_value=0.0, max_value=100.0, value=float(tariff_cfg.get("night_rate_yen_kwh", active_plan_preset.get("night_rate_yen_kwh", 16.30))), step=0.1)
+        with col_t4:
+            t_day_rate = st.number_input("昼間買電単価 (円/kWh)", min_value=0.0, max_value=100.0, value=float(tariff_cfg.get("day_rate_yen_kwh", active_plan_preset.get("day_rate_yen_kwh", 36.00))), step=0.1)
+
+        col_j1, col_j2, col_j3, col_j4 = st.columns(4)
+        with col_j1:
+            t_jit_start_h = st.number_input("JIT充電 開始 (時)", min_value=0, max_value=23, value=int(tariff_cfg.get("optimal_charge_start_hour", active_plan_preset.get("optimal_charge_start_hour", 3))))
+        with col_j2:
+            t_jit_start_m = st.number_input("JIT充電 開始 (分)", min_value=0, max_value=59, value=int(tariff_cfg.get("optimal_charge_start_min", active_plan_preset.get("optimal_charge_start_min", 0))), step=5)
+        with col_j3:
+            t_jit_end_h = st.number_input("JIT充電 完了 (時)", min_value=0, max_value=23, value=int(tariff_cfg.get("optimal_charge_end_hour", active_plan_preset.get("optimal_charge_end_hour", 6))))
+        with col_j4:
+            t_jit_end_m = st.number_input("JIT充電 完了 (分)", min_value=0, max_value=59, value=int(tariff_cfg.get("optimal_charge_end_min", active_plan_preset.get("optimal_charge_end_min", 30))), step=5)
+
+        # FIT設定
+        fit_cfg = current_cfg.get("fit_setting", {})
+        col_f1, col_f2, col_f3 = st.columns(3)
+        with col_f1:
+            fit_end_raw = fit_cfg.get("fit_end_date", "2026-11-27")
+            try:
+                fit_end_val = datetime.strptime(fit_end_raw, "%Y-%m-%d").date()
+            except Exception:
+                fit_end_val = date(2026, 11, 27)
+            t_fit_end = st.date_input("FIT買取期間 満了日", value=fit_end_val)
+        with col_f2:
+            t_pre_fit = st.number_input("FIT期間中 売電単価 (円/kWh)", min_value=0.0, max_value=100.0, value=float(fit_cfg.get("pre_fit_sell_price", 31.0)), step=0.5)
+        with col_f3:
+            t_post_fit = st.number_input("卒FIT後 売電単価 (円/kWh)", min_value=0.0, max_value=100.0, value=float(fit_cfg.get("post_fit_sell_price", 8.5)), step=0.1)
+
+        st.markdown("---")
+
+        # ----------------------------------------------------------------------
+        # ☀️ 4. 太陽光発電 ＆ 買電・売電取得方式設定
+        # ----------------------------------------------------------------------
+        st.subheader("☀️ 4. 太陽光発電 ＆ 系統（買電/売電）取得方式")
+        grid_cfg = current_cfg.get("grid_measurement", {})
+        current_source = grid_cfg.get("source", "hems_web")
+
+        sources = presets_jp.get_grid_sources()
+        src_ids = [s["id"] for s in sources]
+        src_names = [s["name"] for s in sources]
+        default_src_idx = src_ids.index(current_source) if current_source in src_ids else 0
+
+        selected_src_idx = st.selectbox(
+            "系統買電・売電データの取得方式を選択",
+            range(len(src_ids)),
+            format_func=lambda i: src_names[i],
+            index=default_src_idx
+        )
+        selected_src_id = src_ids[selected_src_idx]
+        st.info(f"💡 {sources[selected_src_idx]['description']}")
+
+        col_s1, col_s2 = st.columns(2)
+        sol_cfg = current_cfg.get("solar_pv", {})
+        with col_s1:
+            pv_cap = st.number_input("太陽光パネル公称容量 (kW)", min_value=0.0, max_value=100.0, value=float(sol_cfg.get("pv_capacity_kw", 4.0)), step=0.1)
+        with col_s2:
+            pv_eff = st.number_input("パワコン変換効率", min_value=0.5, max_value=1.0, value=float(sol_cfg.get("pv_efficiency", 0.85)), step=0.01)
+
+        with st.expander("🔌 HEMSコントローラー認証情報 (Web/CenteHTTPd 取得時)", expanded=(selected_src_id == "hems_web")):
+            hems_cfg = current_cfg.get("hems_controller", {})
+            col_h1, col_h2, col_h3 = st.columns(3)
+            with col_h1:
+                hems_ip = st.text_input("HEMS IPアドレス", value=hems_cfg.get("ip_address", "192.168.1.100"))
+            with col_h2:
+                hems_uid = st.text_input("機器ID (ユーザーID)", value=hems_cfg.get("user_id", ""))
+            with col_h3:
+                hems_pwd = st.text_input("登録コード (パスワード)", value=hems_cfg.get("password", ""), type="password")
+
+        with st.expander("📶 スマートメーター Bルート設定 (Wi-SUNドングル通信時)", expanded=(selected_src_id == "broute")):
+            route_cfg = current_cfg.get("route", {})
+            col_r1, col_r2, col_r3 = st.columns(3)
+            with col_r1:
+                broute_port = st.text_input("シリアルポート (COM3 / /dev/ttyUSB0等)", value=route_cfg.get("port", "COM3"))
+            with col_r2:
+                broute_id = st.text_input("Bルート認証ID (32桁)", value=route_cfg.get("id", ""))
+            with col_r3:
+                broute_pass = st.text_input("Bルート認証パスワード (12桁)", value=route_cfg.get("password", ""), type="password")
+
+        st.markdown("---")
+
+        # ----------------------------------------------------------------------
+        # 📍 5. 設置地域・日射量予測設定
+        # ----------------------------------------------------------------------
+        st.subheader("📍 5. 設置地域 ＆ 日射量予測（気象API）設定")
+        loc_cfg = current_cfg.get("location", {})
+        loc_presets = presets_jp.get_location_presets()
+        loc_names = [l["name"] for l in loc_presets]
+        loc_ids = [l["id"] for l in loc_presets]
+
+        cur_loc_name = loc_cfg.get("name", "東京都 (東京・千代田区)")
+        matched_loc_idx = 0
+        for i, l in enumerate(loc_presets):
+            if l["name"] in cur_loc_name or cur_loc_name in l["name"]:
+                matched_loc_idx = i
+                break
+
+        selected_loc_idx = st.selectbox(
+            "お住まいの地域を選択 (全国主要都市プリセット)",
+            range(len(loc_names)),
+            format_func=lambda i: loc_names[i],
+            index=matched_loc_idx
+        )
+        selected_loc = loc_presets[selected_loc_idx]
+
+        col_l1, col_l2, col_l3 = st.columns(3)
+        with col_l1:
+            loc_name_val = st.text_input("地域名・住所表示", value=cur_loc_name if cur_loc_name else selected_loc["name"])
+        with col_l2:
+            loc_lat = st.number_input("緯度 (Latitude)", value=float(loc_cfg.get("latitude", selected_loc["lat"])), format="%.4f")
+        with col_l3:
+            loc_lon = st.number_input("経度 (Longitude)", value=float(loc_cfg.get("longitude", selected_loc["lon"])), format="%.4f")
+
+        st.markdown("---")
+
+        # 保存ボタン
+        submitted = st.form_submit_button("💾 上記の設定を保存して即時反映する", type="primary", use_container_width=True)
+
+        if submitted:
+            new_cfg = {
+                "battery_system": {
+                    "manufacturer": selected_mfg_id,
+                    "name": mfg_names[selected_mfg_idx],
+                    "protocol": mfg_info.get("protocol", "echonet_udp"),
+                    "ip_address": bat_ip,
+                    "port": int(bat_port),
+                    "enabled": bat_enabled,
+                    "battery_capacity_kwh": float(bat_cap),
+                    "battery_max_soc": float(bat_max_soc),
+                    "battery_min_soc": float(bat_min_soc)
+                },
+                "solar_pv": {
+                    "pv_capacity_kw": float(pv_cap),
+                    "pv_efficiency": float(pv_eff),
+                    "enabled": True
+                },
+                "grid_measurement": {
+                    "source": selected_src_id,
+                    "name": src_names[selected_src_idx],
+                    "enabled": True
+                },
+                "hems_controller": {
+                    "ip_address": hems_ip,
+                    "user_id": hems_uid,
+                    "password": hems_pwd,
+                    "enabled": (selected_src_id == "hems_web")
+                },
+                "route": {
+                    "port": broute_port,
+                    "id": broute_id,
+                    "password": broute_pass,
+                    "baudrate": 115200,
+                    "enabled": (selected_src_id == "broute")
+                },
+                "electricity_tariff": {
+                    "company": selected_comp_id,
+                    "plan": selected_plan_id,
+                    "name": f"{comp_names[selected_comp_idx]} {plan_names[selected_plan_idx]}",
+                    "night_start_hour": int(t_night_start),
+                    "night_end_hour": int(t_night_end),
+                    "optimal_charge_start_hour": int(t_jit_start_h),
+                    "optimal_charge_start_min": int(t_jit_start_m),
+                    "optimal_charge_end_hour": int(t_jit_end_h),
+                    "optimal_charge_end_min": int(t_jit_end_m),
+                    "night_rate_yen_kwh": float(t_night_rate),
+                    "day_rate_yen_kwh": float(t_day_rate)
+                },
+                "fit_setting": {
+                    "fit_end_date": t_fit_end.strftime("%Y-%m-%d"),
+                    "pre_fit_sell_price": float(t_pre_fit),
+                    "post_fit_sell_price": float(t_post_fit)
+                },
+                "location": {
+                    "name": loc_name_val,
+                    "latitude": float(loc_lat),
+                    "longitude": float(loc_lon)
+                }
+            }
+
+            save_ok = cm.save_config(new_cfg)
+            if save_ok:
+                st.success("✅ 設定を保存し、config.yaml に正常反映しました！")
+                time.sleep(1.0)
+                st.rerun()
+            else:
+                st.error("設定の保存中にエラーが発生しました。")
+
+    # --------------------------------------------------------------------------
+    # 📦 設定のバックアップ ＆ YAMLプレビュー
+    # --------------------------------------------------------------------------
+    with st.expander("📦 設定ファイルのバックアップ ＆ config.yaml 生データプレビュー"):
+        if st.button("📦 今すぐタイムスタンプ付きバックアップを作成", key="btn_create_backup"):
+            bak_path = cm.backup_config()
+            if bak_path:
+                st.success(f"バックアップを作成しました: `{bak_path}`")
+            else:
+                st.error("バックアップの作成に失敗しました。")
+
+        try:
+            with open("config.yaml", "r", encoding="utf-8") as f:
+                raw_yaml_text = f.read()
+            st.code(raw_yaml_text, language="yaml")
+        except Exception as e:
+            st.write(f"config.yaml 読み込みエラー: {e}")
+

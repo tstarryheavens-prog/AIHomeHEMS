@@ -1,6 +1,6 @@
 import socket
 
-ip = "192.168.2.12"
+ip = "192.168.1.200"
 port = 3610
 
 def query_epc(epc):

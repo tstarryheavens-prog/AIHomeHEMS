@@ -9,7 +9,7 @@ JST = timezone(timedelta(hours=9))
 
 def fetch_hems_past_days_history(days=30):
     """
-    HEMS Webコントローラ(192.168.2.23)から過去N日間の電気代・自給率・消費電力量の履歴ログを自動収集しDB保存する
+    HEMS Webコントローラ(192.168.1.100)から過去N日間の電気代・自給率・消費電力量の履歴ログを自動収集しDB保存する
     """
     try:
         with open("config.yaml", "r", encoding="utf-8") as f:
@@ -18,7 +18,7 @@ def fetch_hems_past_days_history(days=30):
         return 0
 
     hems_conf = config.get("hems_controller", {})
-    ip = hems_conf.get("ip_address", "192.168.2.23")
+    ip = hems_conf.get("ip_address", "192.168.1.100")
     user_id = hems_conf.get("user_id", "")
     password = hems_conf.get("password", "")
 

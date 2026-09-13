@@ -32,8 +32,8 @@ def scan_ip_echonet(ip):
     return str(ip), None
 
 def main():
-    print("=== Scanning 192.168.2.0/24 for ECHONET Lite UDP 1369 (Distribution Board / Metering) ===")
-    network = ipaddress.ip_network("192.168.2.0/24", strict=False)
+    print("=== Scanning 192.168.1.0/24 for ECHONET Lite UDP 1369 (Distribution Board / Metering) ===")
+    network = ipaddress.ip_network("192.168.1.0/24", strict=False)
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
         futures = {executor.submit(scan_ip_echonet, ip): ip for ip in network.hosts()}

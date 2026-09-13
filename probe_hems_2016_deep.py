@@ -11,7 +11,7 @@ with open("config.yaml", "r", encoding="utf-8") as f:
     config = yaml.safe_load(f)
 
 hems_conf = config.get("hems_controller", {})
-ip = hems_conf.get("ip_address", "192.168.2.23")
+ip = hems_conf.get("ip_address", "192.168.1.100")
 user_id = hems_conf.get("user_id", "")
 password = hems_conf.get("password", "")
 
@@ -21,7 +21,7 @@ params = {"user_id": user_id, "password": password, "hoji": "on", "disp_url": ""
 res_login = session.get(login_url, params=params, timeout=5)
 print(f"Login status: {res_login.status_code}")
 
-print("\n=== 1. Probing CGI & CSV Download Endpoints on 192.168.2.23 ===")
+print("\n=== 1. Probing CGI & CSV Download Endpoints on 192.168.1.100 ===")
 
 cgi_candidates = [
     "/csv_down.cgi", "/csvdown.cgi", "/csv_export.cgi", "/dl_csv.cgi", "/download.cgi",

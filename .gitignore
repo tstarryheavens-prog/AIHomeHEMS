@@ -244,3 +244,14 @@ Temporary Items
 **/IntegrationServer/XAStore/
 **/IntegrationServer/packages/Wm*/
 
+# Local config & credentials
+.env
+hatena_config.yaml
+*.env
+
+# Local database & logs
+hems.db
+hems_data_log.csv
+hems_full_telemetry_log.csv
+
+config.yaml

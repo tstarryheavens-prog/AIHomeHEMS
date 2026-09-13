@@ -3,7 +3,7 @@ import sys
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-ip = "192.168.2.23"
+ip = "192.168.1.100"
 
 # Fetch login.css
 r = requests.get(f"http://{ip}/css/login.css")
