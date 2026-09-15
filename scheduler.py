@@ -37,9 +37,12 @@ class HEMSController:
             print(f"[Scheduler] Error during daily optimization: {e}")
 
     def start(self):
-        # 起動時に即時1回テレメトリ取得
+        # 起動時に即時1回テレメトリ取得 (失敗してもスケジューラ登録を妨げない)
         print("[HEMSController] Initializing telemetry poll...")
-        self.collect_telemetry_job()
+        try:
+            self.collect_telemetry_job()
+        except Exception as ex:
+            print(f"[HEMSController] Initial telemetry poll failed (will retry in schedule): {ex}")
 
         # 30秒周期のデータ収集ジョブ登録
         self.scheduler.add_job(self.collect_telemetry_job, 'interval', seconds=30, id="telemetry_job", replace_existing=True)
@@ -47,8 +50,11 @@ class HEMSController:
         # 毎日23:00の計画最適化ジョブ登録
         self.scheduler.add_job(self.run_daily_optimization_job, 'cron', hour=23, minute=0, id="optimization_job", replace_existing=True)
 
-        # 起動時に即時1回最適化も計算
-        self.run_daily_optimization_job()
+        # 起動時に即時1回最適化も計算 (安全実行)
+        try:
+            self.run_daily_optimization_job()
+        except Exception as ex:
+            print(f"[HEMSController] Initial optimization calculation skipped: {ex}")
 
         self.scheduler.start()
         print("[HEMSController] Background Scheduler started successfully (30s interval).")
