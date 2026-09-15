@@ -16,9 +16,10 @@ from hems_history_importer import fetch_hems_past_days_history
 from bulk_extract_history import start_bulk_extraction_async, get_bulk_extraction_status
 from config_manager import get_config_manager
 import presets_jp
+from version import APP_VERSION, RELEASE_DATE
 
 st.set_page_config(
-    page_title="AI SMART ENERGY CONTROLLER",
+    page_title=f"AI SMART ENERGY CONTROLLER {APP_VERSION}",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -55,7 +56,8 @@ if os.path.exists("manual_override.json"):
     except Exception:
         pass
 
-st.sidebar.title("⚡ AI HEMS OS v2.4")
+st.sidebar.title(f"⚡ AI HEMS OS {APP_VERSION}")
+st.sidebar.caption(f"🏷️ Version {APP_VERSION} ({RELEASE_DATE})")
 
 try:
     with open("config.yaml", "r", encoding="utf-8") as f:
@@ -462,6 +464,26 @@ if bulk_status["is_running"]:
 elif bulk_status["processed_days"] > 0 and bulk_status["processed_days"] == bulk_status["total_days"]:
     st.success(f"✅ 2016年からの全期間 ({bulk_status['extracted_records']}日分) の履歴ログの一括抽出・DB保存が完了しました！")
 
+
+# ----------------------------------------------------
+# 🏷️ メイン画面最上部ヘッダー ＆ 右上バージョンバッジ (サイドバーと完全一致)
+# ----------------------------------------------------
+st.markdown(
+    f"""
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: -15px; margin-bottom: 12px; padding: 6px 4px; border-bottom: 1px solid rgba(255,255,255,0.08);">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 1.3rem; font-weight: 800; letter-spacing: -0.02em; background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">⚡ AI SMART ENERGY CONTROLLER</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="display: inline-flex; align-items: center; gap: 6px; background: rgba(59, 130, 246, 0.15); border: 1.5px solid rgba(59, 130, 246, 0.45); border-radius: 20px; padding: 4px 14px; font-size: 0.85rem; font-weight: 800; color: #93c5fd; box-shadow: 0 2px 8px rgba(0,0,0,0.25);">
+                <span style="display: inline-block; width: 7px; height: 7px; background-color: #10b981; border-radius: 50%; box-shadow: 0 0 8px #10b981;"></span>
+                {APP_VERSION}
+            </span>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
 # 🗂️ 5タブレイアウトの構築
 tab1, tab2, tab4, tab3, tab5 = st.tabs(["🎛️ ライブ", "🤖 AI制御", "💰 1ヶ月収支・利益明細", "🛡️ 診断・分析", "⚙️ システム設定・汎用化"])
@@ -1611,8 +1633,8 @@ with st.expander("⚙️ システム手動操作・同期（サイドバーが�
 # ⚙️ タブ5: システム個別設定 ＆ 汎用化コントロール (誰でも使えるオープン設計)
 # ==============================================================================
 with tab5:
-    st.header("⚙️ システム個別設定 ＆ 汎用化コントロール")
-    st.caption("日本国内のスマートホーム規格（ECHONET Lite / Bルート Wi-SUN）および国内主要メーカー機器、全国10大電力会社の料金プランに対応した汎用設定パネルです。")
+    st.header(f"⚙️ システム個別設定 ＆ 汎用化コントロール ({APP_VERSION})")
+    st.caption(f"日本国内のスマートホーム規格（ECHONET Lite / Bルート Wi-SUN）および国内主要メーカー機器、全国10大電力会社の料金プランに対応した汎用設定パネルです。(Version {APP_VERSION} / リリース日: {RELEASE_DATE})")
 
     cm = get_config_manager()
     current_cfg = cm.load_config()
