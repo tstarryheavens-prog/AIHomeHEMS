@@ -303,7 +303,7 @@ def apply_device_to_config(ip: str, role: str, name: str = "") -> bool:
         cfg["grid_measurement"]["enabled"] = True
         return cm.save_config(cfg)
 
-    elif role in ("aircon", "appliance", "lighting", "smart_plug", "tuya", "hub", "camera", "switch", "sensor"):
+    elif role in ("aircon", "appliance", "lighting", "smart_plug", "tuya", "hub", "camera", "switch", "sensor", "co2_sensor"):
         if "smart_appliances" not in cfg or not isinstance(cfg["smart_appliances"], list):
             cfg["smart_appliances"] = []
 
@@ -316,9 +316,10 @@ def apply_device_to_config(ip: str, role: str, name: str = "") -> bool:
                 "lighting": f"スマート照明 ({ip})",
                 "camera": f"ネットワークカメラ ({ip})",
                 "switch": f"スマートスイッチ ({ip})",
+                "co2_sensor": f"+Style CO2・温湿度センサー ({ip})",
+                "sensor": f"スマート環境センサー ({ip})",
                 "tuya": f"Tuya機器 ({ip})",
                 "hub": f"スマートハブ ({ip})",
-                "sensor": f"スマートセンサー ({ip})",
                 "appliance": f"スマート家電 ({ip})"
             }
             default_name = name or role_labels.get(role, f"スマート機器 ({ip})")

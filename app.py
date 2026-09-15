@@ -1744,8 +1744,9 @@ with tab5:
                                 with c_sel1:
                                     cat_choice = st.selectbox(
                                         "種別",
-                                        ["smart_plug", "lighting", "camera", "hub", "switch", "aircon"],
+                                        ["co2_sensor", "smart_plug", "lighting", "camera", "hub", "switch", "aircon"],
                                         format_func=lambda x: {
+                                            "co2_sensor": "🌱 CO2・温湿度センサー (+Style等)",
                                             "smart_plug": "🔌 スマートプラグ (電源)",
                                             "lighting": "💡 スマート照明 (LED/電球)",
                                             "camera": "📹 ネットワークカメラ",
@@ -1782,11 +1783,13 @@ with tab5:
             with c_add3:
                 new_app_cat = st.selectbox(
                     "機器カテゴリ", 
-                    ["aircon", "smart_plug", "lighting", "water_heater", "tuya"], 
+                    ["co2_sensor", "aircon", "smart_plug", "lighting", "camera", "water_heater", "tuya"], 
                     format_func=lambda x: {
+                        "co2_sensor": "🌱 +Style CO2・温湿度環境センサー",
                         "aircon": "❄️ 家庭用エアコン", 
                         "smart_plug": "🔌 スマートプラグ / スイッチ", 
                         "lighting": "💡 スマート照明", 
+                        "camera": "📹 ネットワークカメラ (ATOMCam等)",
                         "water_heater": "♨️ 給湯機/エコキュート",
                         "tuya": "📱 Tuya / Smart Life 機器"
                     }[x], 
@@ -1912,6 +1915,55 @@ with tab5:
                                 remove_appliance_from_config(app_ip)
                                 st.rerun()
 
+                elif app_cat in ("co2_sensor", "sensor"):
+                    with st.expander(f"🌱 **{app_name}** ({app_ip}) - +Style CO2・温湿度環境センサー", expanded=True):
+                        m1, m2, m3, m4 = st.columns(4)
+                        m1.metric("🌿 CO2濃度", "待機中 (Tuya Local)", help="厚生労働省推奨の換気基準: 1,000ppm以下が良好")
+                        m2.metric("🌡️ 室内温度", "-- ℃")
+                        m3.metric("💧 室内湿度", "-- %")
+                        m4.metric("📊 室内環境判定", "快適 (換気良好)")
+
+                        st.markdown("""
+                        > 🤖 **HEMS AI連携・省エネ制御シナリオ**
+                        > - ❄️ **体感温度・不快指数ベースのエアコンAI制御**: 天井のエアコン内蔵センサーの誤差（熱だまり）を補正し、床上実測値に基づいて冷暖房パワーを最適化。
+                        > - 🌬️ **CO2自動換気トリガー**: 1,000ppm超過時に換気扇／サーキュレーター（スマートプラグ連動）を自動起動。
+                        > - 👤 **人体CO2検知による在室/不在AI判定**: 呼気によるCO2濃度変化から在室を判定し、不在時の無駄な空調・蓄電ロスを自動カット。
+                        """)
+
+                        c_dev1, c_dev2 = st.columns([3, 1])
+                        with c_dev1:
+                            st.caption(f"📡 接続プロトコル: Tuya Local Protocol (TCP 6668) ｜ 機器IP: `{app_ip}`")
+                        with c_dev2:
+                            if st.button("🗑️ 登録解除", key=f"del_sensor_{a_idx}", use_container_width=True):
+                                remove_appliance_from_config(app_ip)
+                                st.success("登録を解除しました")
+                                time.sleep(0.5)
+                                st.rerun()
+
+                elif app_cat == "camera":
+                    with st.expander(f"📹 **{app_name}** ({app_ip}) - ネットワークカメラ", expanded=True):
+                        c1, c2 = st.columns([3, 1])
+                        with c1:
+                            st.markdown(f"・**IPアドレス**: `{app_ip}`\n・**ストリーミング**: Webライブ / RTSP対応\n・[🌐 Webライブストリームを開く](http://{app_ip}:8080/live) ｜ RTSP: `rtsp://{app_ip}:8554/live`")
+                        with c2:
+                            if st.button("🗑️ 登録解除", key=f"del_cam_{a_idx}", use_container_width=True):
+                                remove_appliance_from_config(app_ip)
+                                st.success("登録を解除しました")
+                                time.sleep(0.5)
+                                st.rerun()
+
+                elif app_cat == "switch":
+                    with st.expander(f"🔘 **{app_name}** ({app_ip}) - スマートスイッチ", expanded=True):
+                        c1, c2 = st.columns([3, 1])
+                        with c1:
+                            st.markdown(f"・**IPアドレス**: `{app_ip}:6668`\n・**通信プロトコル**: Tuya Local Protocol (Port 6668)")
+                        with c2:
+                            if st.button("🗑️ 登録解除", key=f"del_sw_{a_idx}", use_container_width=True):
+                                remove_appliance_from_config(app_ip)
+                                st.success("登録を解除しました")
+                                time.sleep(0.5)
+                                st.rerun()
+
                 elif app_cat in ("smart_plug", "tuya", "hub"):
                     with st.expander(f"🔌 **{app_name}** ({app_ip}) - Tuya Local 機器", expanded=True):
                         c1, c2 = st.columns([3, 1])
@@ -1919,6 +1971,16 @@ with tab5:
                             st.markdown(f"・**IPアドレス**: `{app_ip}:6668`\n・**カテゴリ**: スマートプラグ / スイッチ / ハブ\n・**通信プロトコル**: Tuya Local Protocol (Port 6668)")
                         with c2:
                             if st.button("🗑️ 登録解除", key=f"del_tuya_{a_idx}"):
+                                remove_appliance_from_config(app_ip)
+                                st.rerun()
+
+                else:
+                    with st.expander(f"📱 **{app_name}** ({app_ip}) - スマート家電", expanded=True):
+                        c1, c2 = st.columns([3, 1])
+                        with c1:
+                            st.markdown(f"・**IPアドレス**: `{app_ip}`\n・**種別**: {app_cat}")
+                        with c2:
+                            if st.button("🗑️ 登録解除", key=f"del_gen_{a_idx}"):
                                 remove_appliance_from_config(app_ip)
                                 st.rerun()
         else:
