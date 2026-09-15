@@ -190,11 +190,12 @@ def check_ip_services(ip_str: str) -> Optional[Dict[str, Any]]:
         device_info["register_as"] = "hems"
         device_info["live_url"] = f"http://{ip_str}/"
 
-    # 3. ATOMCam (Hack / RTSP / MJPEG)
+    # 3. ATOMCam / ネットワークカメラ (Hack / RTSP / MJPEG)
     elif 8554 in open_ports or 554 in open_ports or (8080 in open_ports and 80 in open_ports):
         device_info["name"] = f"ATOMCam ネットワークカメラ ({ip_str})"
         device_info["category"] = "ネットワークカメラ"
-        device_info["details"] = "ATOMCam HACK ライブストリーム対応"
+        device_info["details"] = "RTSP / Webストリーミング対応カメラ"
+        device_info["register_as"] = "camera"
         device_info["live_url"] = f"http://{ip_str}:8080/live" if 8080 in open_ports else f"http://{ip_str}/"
 
     # 4. スマート照明 / ハブ
@@ -302,7 +303,7 @@ def apply_device_to_config(ip: str, role: str, name: str = "") -> bool:
         cfg["grid_measurement"]["enabled"] = True
         return cm.save_config(cfg)
 
-    elif role in ("aircon", "appliance", "lighting", "smart_plug", "tuya", "hub"):
+    elif role in ("aircon", "appliance", "lighting", "smart_plug", "tuya", "hub", "camera", "switch", "sensor"):
         if "smart_appliances" not in cfg or not isinstance(cfg["smart_appliances"], list):
             cfg["smart_appliances"] = []
 
@@ -313,8 +314,11 @@ def apply_device_to_config(ip: str, role: str, name: str = "") -> bool:
                 "aircon": f"エアコン ({ip})",
                 "smart_plug": f"スマートプラグ ({ip})",
                 "lighting": f"スマート照明 ({ip})",
+                "camera": f"ネットワークカメラ ({ip})",
+                "switch": f"スマートスイッチ ({ip})",
                 "tuya": f"Tuya機器 ({ip})",
                 "hub": f"スマートハブ ({ip})",
+                "sensor": f"スマートセンサー ({ip})",
                 "appliance": f"スマート家電 ({ip})"
             }
             default_name = name or role_labels.get(role, f"スマート機器 ({ip})")

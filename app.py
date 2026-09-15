@@ -1643,9 +1643,49 @@ with tab5:
 
         if st.session_state.discovered_devices:
             st.markdown("##### 🔍 検出された機器一覧")
+            registered_batt_ip = current_cfg.get("battery_system", {}).get("ip_address")
+            registered_hems_ip = current_cfg.get("hems_controller", {}).get("ip_address")
+            registered_apps_map = {a.get("ip_address"): a for a in current_cfg.get("smart_appliances", []) if a.get("ip_address")}
+
             for idx, dev in enumerate(st.session_state.discovered_devices):
-                with st.expander(f"📌 {dev['name']} ({dev['category']}) - IP: {dev['ip']}", expanded=True):
-                    c_info, c_action = st.columns([3, 2])
+                dev_ip = dev["ip"]
+                is_registered = False
+                reg_badge_text = ""
+                reg_type = None
+
+                if dev_ip == registered_batt_ip:
+                    is_registered = True
+                    reg_badge_text = "🔋 蓄電池として登録中"
+                    reg_type = "battery"
+                elif dev_ip == registered_hems_ip:
+                    is_registered = True
+                    reg_badge_text = "🏠 HEMSとして登録中"
+                    reg_type = "hems"
+                elif dev_ip in registered_apps_map:
+                    is_registered = True
+                    app_entry = registered_apps_map[dev_ip]
+                    app_cat = app_entry.get("category", "appliance")
+                    cat_map = {
+                        "aircon": "❄️ エアコン",
+                        "camera": "📹 カメラ",
+                        "smart_plug": "🔌 プラグ",
+                        "lighting": "💡 照明",
+                        "switch": "🔘 スイッチ",
+                        "hub": "📡 リモコン/ハブ",
+                        "tuya": "📱 Tuya機器",
+                        "water_heater": "♨️ 給湯機"
+                    }
+                    reg_badge_text = f"連携登録済み: {cat_map.get(app_cat, 'スマート家電')} ({app_entry.get('name')})"
+                    reg_type = "appliance"
+
+                expander_title = (
+                    f"🟢 [登録済み] {dev['name']} - IP: {dev_ip} ({reg_badge_text})"
+                    if is_registered else
+                    f"📌 {dev['name']} ({dev['category']}) - IP: {dev_ip}"
+                )
+
+                with st.expander(expander_title, expanded=not is_registered):
+                    c_info, c_action = st.columns([3, 2.5])
                     with c_info:
                         st.markdown(f"**カテゴリ:** `{dev['category']}` | **通信プロトコル:** `{dev.get('protocol', 'tcp')}`")
                         st.markdown(f"**詳細:** {dev.get('details', '')}")
@@ -1654,65 +1694,74 @@ with tab5:
                             st.markdown(f"🌐 [Web管理画面を開く]({dev['live_url']})")
 
                     with c_action:
-                        reg_role = dev.get("register_as")
-                        if reg_role == "battery" or "蓄電池" in dev["category"]:
-                            if st.button(f"🔋 蓄電池として設定に反映", key=f"btn_reg_batt_{idx}", use_container_width=True):
-                                apply_device_to_config(dev["ip"], "battery")
-                                st.success(f"蓄電池IPを {dev['ip']} に設定しました！")
-                                time.sleep(0.5)
-                                st.rerun()
-                        elif reg_role == "hems" or "HEMS" in dev["category"]:
-                            if st.button(f"🔌 HEMSコントローラーとして反映", key=f"btn_reg_hems_{idx}", use_container_width=True):
-                                apply_device_to_config(dev["ip"], "hems")
-                                st.success(f"HEMS IPを {dev['ip']} に設定しました！")
-                                time.sleep(0.5)
-                                st.rerun()
-                        elif reg_role == "aircon" or "エアコン" in dev["name"] or "空調" in dev["category"]:
-                            if st.button(f"❄️ エアコンとして登録・連携", key=f"btn_reg_ac_{idx}", use_container_width=True):
-                                apply_device_to_config(dev["ip"], "aircon", dev["name"])
-                                st.success(f"エアコン ({dev['ip']}) を連携家電に登録しました！")
-                                time.sleep(0.5)
-                                st.rerun()
-                        elif reg_role == "lighting" or "照明" in dev["category"]:
-                            if st.button(f"💡 スマート照明として登録", key=f"btn_reg_light_{idx}", use_container_width=True):
-                                apply_device_to_config(dev["ip"], "lighting", dev["name"])
-                                st.success(f"スマート照明 ({dev['ip']}) を登録しました！")
-                                time.sleep(0.5)
-                                st.rerun()
-                        elif reg_role == "tuya" or "Tuya" in dev["category"] or 6668 in dev.get("ports", []):
-                            col_tuya1, col_tuya2 = st.columns(2)
-                            with col_tuya1:
-                                if st.button(f"🔌 スマートプラグ登録", key=f"btn_reg_plug_{idx}", use_container_width=True):
-                                    apply_device_to_config(dev["ip"], "smart_plug", f"スマートプラグ ({dev['ip']})")
-                                    st.success(f"スマートプラグ ({dev['ip']}) を登録しました！")
-                                    time.sleep(0.5)
-                                    st.rerun()
-                            with col_tuya2:
-                                if st.button(f"📱 Tuya/照明として登録", key=f"btn_reg_tuya_{idx}", use_container_width=True):
-                                    apply_device_to_config(dev["ip"], "lighting", f"Tuya照明・機器 ({dev['ip']})")
-                                    st.success(f"Tuya機器 ({dev['ip']}) を登録しました！")
+                        if is_registered:
+                            st.success(f"✅ **{reg_badge_text}**")
+                            if reg_type == "appliance":
+                                if st.button(f"🗑️ この機器の登録を解除", key=f"btn_unreg_scan_{idx}", use_container_width=True):
+                                    remove_appliance_from_config(dev_ip)
+                                    st.success("登録を解除しました")
                                     time.sleep(0.5)
                                     st.rerun()
                         else:
-                            col_sub1, col_sub2, col_sub3 = st.columns(3)
-                            with col_sub1:
-                                if st.button("🔋 蓄電池", key=f"btn_manual_batt_{idx}", use_container_width=True):
-                                    apply_device_to_config(dev["ip"], "battery")
-                                    st.success(f"蓄電池IPを {dev['ip']} に反映しました")
+                            reg_role = dev.get("register_as")
+
+                            # 1. 蓄電池
+                            if reg_role == "battery" or "蓄電池" in dev["category"]:
+                                if st.button(f"🔋 蓄電池として設定に反映", key=f"btn_reg_batt_{idx}", use_container_width=True, type="primary"):
+                                    apply_device_to_config(dev_ip, "battery")
+                                    st.success(f"蓄電池IPを {dev_ip} に設定しました！")
                                     time.sleep(0.5)
                                     st.rerun()
-                            with col_sub2:
-                                if st.button("❄️ エアコン", key=f"btn_manual_ac_{idx}", use_container_width=True):
-                                    apply_device_to_config(dev["ip"], "aircon", dev["name"])
-                                    st.success(f"エアコンIPを {dev['ip']} に反映しました")
+
+                            # 2. HEMS コントローラー
+                            elif reg_role == "hems" or "HEMS" in dev["category"]:
+                                if st.button(f"🔌 HEMSコントローラーとして反映", key=f"btn_reg_hems_{idx}", use_container_width=True, type="primary"):
+                                    apply_device_to_config(dev_ip, "hems")
+                                    st.success(f"HEMS IPを {dev_ip} に設定しました！")
                                     time.sleep(0.5)
                                     st.rerun()
-                            with col_sub3:
-                                if st.button("🔌 プラグ", key=f"btn_manual_plug_{idx}", use_container_width=True):
-                                    apply_device_to_config(dev["ip"], "smart_plug", dev["name"])
-                                    st.success(f"スマートプラグを {dev['ip']} に反映しました")
+
+                            # 3. ネットワークカメラ (ATOMCam等)
+                            elif reg_role == "camera" or "カメラ" in dev["category"] or 8554 in dev.get("ports", []) or 554 in dev.get("ports", []):
+                                if st.button(f"📹 ネットワークカメラとして登録", key=f"btn_reg_cam_{idx}", use_container_width=True, type="primary"):
+                                    apply_device_to_config(dev_ip, "camera", dev["name"])
+                                    st.success(f"ネットワークカメラ ({dev_ip}) を登録しました！")
                                     time.sleep(0.5)
                                     st.rerun()
+
+                            # 4. エアコン
+                            elif reg_role == "aircon" or "エアコン" in dev["name"] or "空調" in dev["category"]:
+                                if st.button(f"❄️ エアコンとして登録・連携", key=f"btn_reg_ac_{idx}", use_container_width=True, type="primary"):
+                                    apply_device_to_config(dev_ip, "aircon", dev["name"])
+                                    st.success(f"エアコン ({dev_ip}) を登録しました！")
+                                    time.sleep(0.5)
+                                    st.rerun()
+
+                            # 5. その他スマート機器（Tuya機器 / スマートプラグ / 照明 / 自由分類）
+                            else:
+                                st.caption("💡 機器の分類を選択して登録:")
+                                c_sel1, c_sel2 = st.columns([1.5, 1])
+                                with c_sel1:
+                                    cat_choice = st.selectbox(
+                                        "種別",
+                                        ["smart_plug", "lighting", "camera", "hub", "switch", "aircon"],
+                                        format_func=lambda x: {
+                                            "smart_plug": "🔌 スマートプラグ (電源)",
+                                            "lighting": "💡 スマート照明 (LED/電球)",
+                                            "camera": "📹 ネットワークカメラ",
+                                            "hub": "📡 リモコン/ハブ",
+                                            "switch": "🔘 スマートスイッチ",
+                                            "aircon": "❄️ エアコン"
+                                        }[x],
+                                        key=f"cat_sel_{idx}",
+                                        label_visibility="collapsed"
+                                    )
+                                with c_sel2:
+                                    if st.button("登録する", key=f"btn_reg_custom_{idx}", use_container_width=True, type="primary"):
+                                        apply_device_to_config(dev_ip, cat_choice, dev["name"])
+                                        st.success(f"{dev_ip} を登録しました！")
+                                        time.sleep(0.5)
+                                        st.rerun()
 
     # --------------------------------------------------------------------------
     # ❄️ 2. 宅内スマート家電 ＆ ECHONET Lite エアコン遠隔操作パネル
