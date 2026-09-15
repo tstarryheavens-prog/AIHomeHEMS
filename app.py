@@ -1679,18 +1679,38 @@ with tab5:
                                 st.success(f"スマート照明 ({dev['ip']}) を登録しました！")
                                 time.sleep(0.5)
                                 st.rerun()
+                        elif reg_role == "tuya" or "Tuya" in dev["category"] or 6668 in dev.get("ports", []):
+                            col_tuya1, col_tuya2 = st.columns(2)
+                            with col_tuya1:
+                                if st.button(f"🔌 スマートプラグ登録", key=f"btn_reg_plug_{idx}", use_container_width=True):
+                                    apply_device_to_config(dev["ip"], "smart_plug", f"スマートプラグ ({dev['ip']})")
+                                    st.success(f"スマートプラグ ({dev['ip']}) を登録しました！")
+                                    time.sleep(0.5)
+                                    st.rerun()
+                            with col_tuya2:
+                                if st.button(f"📱 Tuya/照明として登録", key=f"btn_reg_tuya_{idx}", use_container_width=True):
+                                    apply_device_to_config(dev["ip"], "lighting", f"Tuya照明・機器 ({dev['ip']})")
+                                    st.success(f"Tuya機器 ({dev['ip']}) を登録しました！")
+                                    time.sleep(0.5)
+                                    st.rerun()
                         else:
-                            col_sub1, col_sub2 = st.columns(2)
+                            col_sub1, col_sub2, col_sub3 = st.columns(3)
                             with col_sub1:
-                                if st.button("🔋 蓄電池へ登録", key=f"btn_manual_batt_{idx}"):
+                                if st.button("🔋 蓄電池", key=f"btn_manual_batt_{idx}", use_container_width=True):
                                     apply_device_to_config(dev["ip"], "battery")
                                     st.success(f"蓄電池IPを {dev['ip']} に反映しました")
                                     time.sleep(0.5)
                                     st.rerun()
                             with col_sub2:
-                                if st.button("❄️ エアコンへ登録", key=f"btn_manual_ac_{idx}"):
+                                if st.button("❄️ エアコン", key=f"btn_manual_ac_{idx}", use_container_width=True):
                                     apply_device_to_config(dev["ip"], "aircon", dev["name"])
                                     st.success(f"エアコンIPを {dev['ip']} に反映しました")
+                                    time.sleep(0.5)
+                                    st.rerun()
+                            with col_sub3:
+                                if st.button("🔌 プラグ", key=f"btn_manual_plug_{idx}", use_container_width=True):
+                                    apply_device_to_config(dev["ip"], "smart_plug", dev["name"])
+                                    st.success(f"スマートプラグを {dev['ip']} に反映しました")
                                     time.sleep(0.5)
                                     st.rerun()
 
@@ -1711,7 +1731,18 @@ with tab5:
             with c_add2:
                 new_app_name = st.text_input("機器名称・設置部屋", placeholder="リビング エアコン", key="new_app_name")
             with c_add3:
-                new_app_cat = st.selectbox("機器カテゴリ", ["aircon", "lighting", "water_heater"], format_func=lambda x: {"aircon": "❄️ 家庭用エアコン", "lighting": "💡 スマート照明", "water_heater": "♨️ 給湯機/エコキュート"}[x], key="new_app_cat")
+                new_app_cat = st.selectbox(
+                    "機器カテゴリ", 
+                    ["aircon", "smart_plug", "lighting", "water_heater", "tuya"], 
+                    format_func=lambda x: {
+                        "aircon": "❄️ 家庭用エアコン", 
+                        "smart_plug": "🔌 スマートプラグ / スイッチ", 
+                        "lighting": "💡 スマート照明", 
+                        "water_heater": "♨️ 給湯機/エコキュート",
+                        "tuya": "📱 Tuya / Smart Life 機器"
+                    }[x], 
+                    key="new_app_cat"
+                )
             with c_add4:
                 st.write("")
                 st.write("")
@@ -1829,6 +1860,16 @@ with tab5:
                                 st.rerun()
                         with c3:
                             if st.button("🗑️ 解除", key=f"del_lt_{a_idx}"):
+                                remove_appliance_from_config(app_ip)
+                                st.rerun()
+
+                elif app_cat in ("smart_plug", "tuya", "hub"):
+                    with st.expander(f"🔌 **{app_name}** ({app_ip}) - Tuya Local 機器", expanded=True):
+                        c1, c2 = st.columns([3, 1])
+                        with c1:
+                            st.markdown(f"・**IPアドレス**: `{app_ip}:6668`\n・**カテゴリ**: スマートプラグ / スイッチ / ハブ\n・**通信プロトコル**: Tuya Local Protocol (Port 6668)")
+                        with c2:
+                            if st.button("🗑️ 登録解除", key=f"del_tuya_{a_idx}"):
                                 remove_appliance_from_config(app_ip)
                                 st.rerun()
         else:

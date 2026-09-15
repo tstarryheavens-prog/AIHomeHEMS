@@ -204,9 +204,10 @@ def check_ip_services(ip_str: str) -> Optional[Dict[str, Any]]:
         device_info["details"] = "Yeelight LAN Control"
 
     elif 6668 in open_ports:
-        device_info["name"] = f"Tuya / Smart Life ハブ ({ip_str})"
-        device_info["category"] = "スマートホームハブ"
-        device_info["details"] = "Tuya Local Protocol"
+        device_info["name"] = f"Tuya / Smart Life 機器 ({ip_str})"
+        device_info["category"] = "スマートプラグ / 家電 (Tuya)"
+        device_info["details"] = "Tuya Local 通信ポート開放 (スマートプラグ・照明・スイッチ・赤外線リモコン等)"
+        device_info["register_as"] = "tuya"
 
     # 5. 一般Web機器
     elif 80 in open_ports or 8080 in open_ports:
@@ -301,14 +302,22 @@ def apply_device_to_config(ip: str, role: str, name: str = "") -> bool:
         cfg["grid_measurement"]["enabled"] = True
         return cm.save_config(cfg)
 
-    elif role in ("aircon", "appliance", "lighting"):
+    elif role in ("aircon", "appliance", "lighting", "smart_plug", "tuya", "hub"):
         if "smart_appliances" not in cfg or not isinstance(cfg["smart_appliances"], list):
             cfg["smart_appliances"] = []
 
         # 既存登録の重複チェック
         existing = [a for a in cfg["smart_appliances"] if a.get("ip_address") == ip]
         if not existing:
-            default_name = name or (f"エアコン ({ip})" if role == "aircon" else f"スマート機器 ({ip})")
+            role_labels = {
+                "aircon": f"エアコン ({ip})",
+                "smart_plug": f"スマートプラグ ({ip})",
+                "lighting": f"スマート照明 ({ip})",
+                "tuya": f"Tuya機器 ({ip})",
+                "hub": f"スマートハブ ({ip})",
+                "appliance": f"スマート家電 ({ip})"
+            }
+            default_name = name or role_labels.get(role, f"スマート機器 ({ip})")
             cfg["smart_appliances"].append({
                 "id": f"app_{ip.replace('.', '_')}",
                 "name": default_name,
