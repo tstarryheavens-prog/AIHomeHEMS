@@ -484,7 +484,7 @@ def poll_and_log_all_data(config_path="config.yaml"):
     with open(CSV_LOG_PATH, "a", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow([
-            now_str, nichicon_ip, soc, batt_w, batt_wh, mode,
+            now_str, battery_ip, soc, batt_w, batt_wh, mode,
             pv_w, cum_pv_kwh, grid_w,
             living_w, aircon_w, master_bed_w, kids_room_w, kitchen_w, others_w,
             hems_status
@@ -492,7 +492,8 @@ def poll_and_log_all_data(config_path="config.yaml"):
         
     return {
         "timestamp": now_str,
-        "nichicon_ip": nichicon_ip,
+        "battery_ip": battery_ip,
+        "nichicon_ip": battery_ip,
         "soc": soc,
         "battery_w": batt_w,
         "battery_wh": batt_wh,
