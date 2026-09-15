@@ -224,27 +224,37 @@ def check_ip_services(ip_str: str) -> Optional[Dict[str, Any]]:
     return device_info
 
 
-def scan_full_iot_network() -> List[Dict[str, Any]]:
+def scan_full_iot_network(progress_callback=None) -> List[Dict[str, Any]]:
     """
     全サブネットを走査し、ECHONET Lite UDPマルチキャストとTCPポート走査を統合して全デバイスを検出
+    progress_callback: Callable[[float, str], None] (進捗率0.0〜1.0, メッセージ)
     """
     found_devices = []
     seen_ips = set()
 
     # Step 1: ECHONET Lite マルチキャスト探索 (高速 1.5秒)
+    if progress_callback:
+        progress_callback(0.05, "📡 Step 1/2: ECHONET Lite UDPマルチキャスト探索中 (224.0.23.0)...")
     print("[NetworkScanner] Running ECHONET Lite Multicast Discovery...")
     udp_devices = discover_echonet_multicast(timeout=1.5)
     for dev in udp_devices:
         found_devices.append(dev)
         seen_ips.add(dev["ip"])
 
+    if progress_callback:
+        progress_callback(0.20, f"📡 Step 1/2 完了: ECHONET Lite 機器 {len(udp_devices)} 台を発見 (エアコン・蓄電池等)")
+
     # Step 2: サブネット高速TCPスキャン
     network, _ = get_local_subnet()
-    print(f"[NetworkScanner] Scanning subnet {network} for TCP services...")
+    hosts = list(network.hosts())
+    total_hosts = len(hosts)
+    print(f"[NetworkScanner] Scanning subnet {network} for TCP services ({total_hosts} hosts)...")
 
+    completed = 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=60) as executor:
-        futures = {executor.submit(check_ip_services, str(ip)): str(ip) for ip in network.hosts()}
+        futures = {executor.submit(check_ip_services, str(ip)): str(ip) for ip in hosts}
         for future in concurrent.futures.as_completed(futures):
+            completed += 1
             res = future.result()
             if res is not None:
                 ip = res["ip"]
@@ -261,14 +271,20 @@ def scan_full_iot_network() -> List[Dict[str, Any]]:
                                 existing["category"] = "蓄電池 / V2H"
                                 existing["register_as"] = "battery"
 
+            if progress_callback and (completed % 15 == 0 or completed == total_hosts):
+                pct = 0.20 + 0.78 * (completed / max(1, total_hosts))
+                progress_callback(pct, f"🔍 Step 2/2: サブネット走査中 ({completed}/{total_hosts} IP完了) ... 検出計 {len(found_devices)} 台")
+
     found_devices = sorted(found_devices, key=lambda x: [int(b) for b in x["ip"].split(".")])
+    if progress_callback:
+        progress_callback(1.0, f"✅ スキャン完了！ 全 {len(found_devices)} 台の機器を検出しました。")
     return found_devices
 
 
-def apply_device_to_config(ip: str, role: str) -> bool:
+def apply_device_to_config(ip: str, role: str, name: str = "") -> bool:
     """
     スキャンで検出された機器を設定ファイルにワンクリック適用する
-    role: "battery" | "hems" | "solar" | "meter"
+    role: "battery" | "hems" | "aircon" | "appliance" | "lighting"
     """
     cm = get_config_manager()
     cfg = cm.load_config()
@@ -285,6 +301,34 @@ def apply_device_to_config(ip: str, role: str) -> bool:
         cfg["grid_measurement"]["enabled"] = True
         return cm.save_config(cfg)
 
+    elif role in ("aircon", "appliance", "lighting"):
+        if "smart_appliances" not in cfg or not isinstance(cfg["smart_appliances"], list):
+            cfg["smart_appliances"] = []
+
+        # 既存登録の重複チェック
+        existing = [a for a in cfg["smart_appliances"] if a.get("ip_address") == ip]
+        if not existing:
+            default_name = name or (f"エアコン ({ip})" if role == "aircon" else f"スマート機器 ({ip})")
+            cfg["smart_appliances"].append({
+                "id": f"app_{ip.replace('.', '_')}",
+                "name": default_name,
+                "ip_address": ip,
+                "category": role,
+                "enabled": True
+            })
+            return cm.save_config(cfg)
+        return True
+
+    return False
+
+
+def remove_appliance_from_config(ip: str) -> bool:
+    """登録済み家電機器を設定から削除"""
+    cm = get_config_manager()
+    cfg = cm.load_config()
+    if "smart_appliances" in cfg and isinstance(cfg["smart_appliances"], list):
+        cfg["smart_appliances"] = [a for a in cfg["smart_appliances"] if a.get("ip_address") != ip]
+        return cm.save_config(cfg)
     return False
 
 
