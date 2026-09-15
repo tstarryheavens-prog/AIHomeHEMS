@@ -250,7 +250,7 @@ st.markdown(
             <span style="color:#60a5fa; font-weight:800; font-size:0.95rem;">🤖 天気予報連動 AI最適化充電計画</span>
             <div>
                 <span style="font-size:0.72rem; background:#065f46; padding:2px 8px; border-radius:4px; color:#34d399; font-weight:800; margin-right:4px;">💰 FIT売電 {fit_days_str}</span>
-                <span style="font-size:0.72rem; background:#1e3a8a; padding:2px 8px; border-radius:4px; color:#93c5fd; font-weight:800; border:1px solid #3b82f6;">v3.0 AI OS</span>
+                <span style="font-size:0.72rem; background:#1e3a8a; padding:2px 8px; border-radius:4px; color:#93c5fd; font-weight:800; border:1px solid #3b82f6;">{APP_VERSION} AI OS</span>
             </div>
         </div>
         <div style="display:grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap:8px; margin-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:8px; text-align:center;">
