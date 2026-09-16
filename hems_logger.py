@@ -303,6 +303,7 @@ def poll_and_log_all_data(config_path="config.yaml"):
     battery_ip = batt_cfg.get("ip_address", "192.168.1.200")
     battery_port = batt_cfg.get("port", 3610)
     battery_mfg = batt_cfg.get("manufacturer", "nichicon")
+    battery_enabled = batt_cfg.get("enabled", True)
     battery_capacity_kwh = batt_cfg.get("battery_capacity_kwh") or config.get("system", {}).get("battery_capacity_kwh", 14.9)
 
     client = UniversalEchonetClient(
