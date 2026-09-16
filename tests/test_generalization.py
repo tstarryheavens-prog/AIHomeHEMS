@@ -68,6 +68,40 @@ class TestGeneralizationSystem(unittest.TestCase):
         client_nichicon = UniversalEchonetClient(enabled=False, manufacturer="nichicon")
         self.assertTrue(client_nichicon.set_battery_timer_schedule(3, 0, 6, 30))
 
+    def test_nichicon_soc_precision_calculation(self):
+        """ニチコンT5仕様（EPC 0xE7 が 4バイト無効値 0x3B9AC9FF を返す）における正確なSOC算出テスト"""
+        client = UniversalEchonetClient(enabled=True, manufacturer="nichicon", capacity_kwh=14.9)
+        
+        # モック _query:
+        # EPC 0xE7 は Nichicon特有の 0x3B9AC9FF (先頭バイトが0x3B = 59)
+        # EPC 0xE2 は 2980 Wh (20% of 14.9 kWh)
+        def mock_query(deoj, epc):
+            if epc == 0xE7:
+                return bytes([0x3B, 0x9A, 0xC9, 0xFF])  # 無効値 999,999,999
+            elif epc == 0xE2:
+                return (2980).to_bytes(4, byteorder='big') # 2,980 Wh
+            elif epc == 0xD0:
+                return (14900).to_bytes(4, byteorder='big') # 14,900 Wh
+            elif epc == 0xDA:
+                return bytes([0x44]) # 待機
+            elif epc == 0xD3:
+                return (0).to_bytes(4, byteorder='big')
+            return None
+
+        client._query = mock_query
+        info = client.get_full_system_info(force_refresh=True)
+
+        # 59% (0x3B誤認) ではなく、正確に 20% と計算されること！
+        self.assertEqual(info["soc"], 20)
+        self.assertEqual(info["battery_wh"], 2980)
+        self.assertTrue(info["connected"])
+
+        # 標準1バイト 0xE7 を返す機器 (パナソニック等: 20%) のテスト
+        client_std = UniversalEchonetClient(enabled=True, manufacturer="panasonic", capacity_kwh=6.3)
+        client_std._query = lambda deoj, epc: bytes([20]) if epc == 0xE7 else None
+        info_std = client_std.get_full_system_info(force_refresh=True)
+        self.assertEqual(info_std["soc"], 20)
+
     def test_config_manager(self):
         """ConfigManager の一時ファイルによる設定読み書き・バックアップ・プリセット適用をテスト"""
         test_yaml = "test_temp_config.yaml"

@@ -71,7 +71,8 @@ class UniversalEchonetClient:
         ip_address: str = "192.168.1.200",
         port: int = 3610,
         manufacturer: str = "nichicon",
-        enabled: bool = True
+        enabled: bool = True,
+        capacity_kwh: Optional[float] = None
     ):
         self.ip_address = ip_address
         self.port = port
@@ -85,6 +86,9 @@ class UniversalEchonetClient:
             BATTERY_MANUFACTURERS["generic_echonet"]
         )
         self.protocol = self.profile.get("protocol", "echonet_udp")
+        self.capacity_kwh = float(capacity_kwh) if capacity_kwh else float(self.profile.get("default_capacity_kwh", 14.9))
+        self._cache_time = 0.0
+        self._cache_info = None
 
     def _next_tid(self) -> bytes:
         tid_bytes = struct.pack(">H", self.tid)
@@ -185,29 +189,36 @@ class UniversalEchonetClient:
 
         return False
 
-    def get_full_system_info(self) -> Dict[str, Any]:
+    def get_full_system_info(self, force_refresh: bool = False) -> Dict[str, Any]:
         """
         蓄電池・太陽光発電から全メトリクス（SOC, 充放電W, PV瞬時W, PV累積kWh, 蓄電池容量Wh）を取得
         """
+        now = time.time()
+        if not force_refresh and self._cache_info and (now - self._cache_time < 3.0):
+            return self._cache_info
+
         if not self.enabled or self.protocol == "mock":
             # モック / デモモード用の自然なシミュレーション値
             hour = time.localtime().tm_hour
             is_solar_time = (6 <= hour <= 18)
             pv_w = random.randint(1200, 3800) if is_solar_time else 0
             soc = random.randint(45, 95)
-            return {
+            mock_res = {
                 "connected": False,
                 "is_mock": True,
                 "manufacturer": self.manufacturer,
                 "soc": soc,
                 "power_w": 800 if pv_w > 0 else -1200,
-                "battery_wh": int(self.profile.get("default_capacity_kwh", 10.0) * 1000 * (soc / 100.0)),
+                "battery_wh": int(self.capacity_kwh * 1000 * (soc / 100.0)),
                 "pv_w": pv_w,
                 "cum_pv_kwh": 7120.5,
                 "cum_discharge_kwh": 140,
                 "cum_charge_kwh": 160,
                 "mode": "AUTO"
             }
+            self._cache_time = now
+            self._cache_info = mock_res
+            return mock_res
 
         # 1. 蓄電池データ取得 (Class 0x027D)
         edt_soc = self._query(CLASS_STORAGE_BATTERY, EPC_BATTERY_SOC)
@@ -224,12 +235,33 @@ class UniversalEchonetClient:
 
         pow_val = int.from_bytes(edt_pow, byteorder='big', signed=True) if edt_pow else 0
         wh_val = int.from_bytes(edt_wh, byteorder='big') if edt_wh else 0
-        default_rated_wh = int(self.profile.get("default_capacity_kwh", 10.0) * 1000)
+        default_rated_wh = int(self.capacity_kwh * 1000)
         rated_wh_val = int.from_bytes(edt_rated, byteorder='big') if edt_rated else default_rated_wh
+        if rated_wh_val <= 0:
+            rated_wh_val = default_rated_wh
 
-        soc_val = edt_soc[0] if edt_soc else 0
-        if soc_val == 0 and wh_val > 0 and rated_wh_val > 0:
-            soc_val = int(round((wh_val / rated_wh_val) * 100.0))
+        # 💡 SOC (%) の判定と正確な算出
+        # ECHONET Lite標準仕様 (EPC 0xE7) は 1バイト unsigned char (0〜100%)。
+        # ニチコンT5系など一部の実機では EPC 0xE7 が未実装で、4バイト無効値 0x3B9AC9FF (999,999,999) を返します。
+        # 単純に edt_soc[0] を参照すると 0x3B (= 59%) と誤認されるため、データ長と有効範囲(0〜100)を厳密にチェックします。
+        soc_val = None
+        if edt_soc:
+            if len(edt_soc) == 1:
+                v1 = edt_soc[0]
+                if 0 <= v1 <= 100:
+                    soc_val = v1
+            elif len(edt_soc) == 2:
+                v2 = int.from_bytes(edt_soc, byteorder='big')
+                if 0 <= v2 <= 100:
+                    soc_val = v2
+
+        # EPC 0xE7 が無効値（4バイト 0x3B9AC9FF 等）または未取得の場合:
+        # 残容量Wh (EPC 0xE2) と定格容量 (rated_wh_val) から物理演算で真のSOCを算出
+        if soc_val is None:
+            if edt_wh is not None and rated_wh_val > 0:
+                soc_val = min(100, max(0, int(round((wh_val / float(rated_wh_val)) * 100.0))))
+            else:
+                soc_val = 20  # 安全フォールバック
 
         raw_mode = edt_mode[0] if edt_mode else 0x45
         mode_str = "AUTO"
@@ -246,9 +278,9 @@ class UniversalEchonetClient:
         cum_dis_val = int.from_bytes(edt_dis, byteorder='big') if edt_dis else 0
         cum_cha_val = int.from_bytes(edt_cha, byteorder='big') if edt_cha else 0
 
-        is_connected = bool(edt_soc is not None or edt_pow is not None or edt_mode is not None)
+        is_connected = bool(edt_soc is not None or edt_pow is not None or edt_mode is not None or edt_wh is not None)
 
-        return {
+        res = {
             "connected": is_connected,
             "is_mock": False,
             "manufacturer": self.manufacturer,
@@ -263,6 +295,9 @@ class UniversalEchonetClient:
             "cum_discharge_kwh": cum_dis_val,
             "cum_charge_kwh": cum_cha_val
         }
+        self._cache_time = now
+        self._cache_info = res
+        return res
 
     def set_battery_mode(self, target_mode: int) -> bool:
         """
@@ -272,6 +307,7 @@ class UniversalEchonetClient:
         0x44: 待機
         0x45: 自動 / グリーンモード
         """
+        self._cache_info = None  # キャッシュ無効化
         if not self.enabled or self.protocol == "mock":
             return True
         return self._write(CLASS_STORAGE_BATTERY, EPC_BATTERY_MODE, bytes([target_mode]))
