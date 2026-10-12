@@ -590,7 +590,7 @@ def render_tab1_live():
     else:
         # 電力量保存則: 宅内負荷 = PV + 買電(売電は負) - 蓄電池電力(充電は+, 放電は-)
         calc_house = pv_w_int + grid_w_int - battery_w_int
-        house_w_int = max(250, int(round(calc_house)))
+        house_w_int = max(50, int(round(calc_house)))
         
     house_kw = round(house_w_int / 1000.0, 2)
 

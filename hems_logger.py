@@ -399,7 +399,8 @@ def poll_and_log_all_data(config_path="config.yaml"):
                             poll_and_log_all_data._hems_cache = {
                                 "time": now_ts,
                                 "grid_w": grid_w,
-                                "direct_rooms": direct_rooms
+                                "direct_rooms": direct_rooms,
+                                "valid": True
                             }
                     except Exception as poll_ex:
                         # 通信例外時は次回再ログインするようにセッション破棄
@@ -409,17 +410,26 @@ def poll_and_log_all_data(config_path="config.yaml"):
 
     # 💡 買電・売電電力 (W) の統合
     # 1. HEMS Web (e-flow.html) からのリアルタイム計測値を最優先
-    if grid_w == 0 and poll_and_log_all_data._hems_cache.get("grid_w", 0) != 0:
-        grid_w = poll_and_log_all_data._hems_cache["grid_w"]
+    grid_is_valid = False
+    if hasattr(poll_and_log_all_data, "_hems_cache") and poll_and_log_all_data._hems_cache.get("valid", False):
+        # 過去3分以内のキャッシュであれば有効な実測値として採用 (grid_wが0Wの場合も正常な実測値として維持)
+        if now_ts - poll_and_log_all_data._hems_cache.get("time", 0) < 180.0:
+            grid_w = poll_and_log_all_data._hems_cache["grid_w"]
+            grid_is_valid = True
 
-    # 2. 未取得時のフォールバック動的計算（全計測値からのエネルギー保存則算定）
-    if grid_w == 0:
-        estimated_house_load = 550 # 標準家屋ベース負荷(W)
-        net_balance = estimated_house_load - pv_w + batt_w
-        grid_w = int(round(net_balance))
+    # 2. 通信切断時（フォールバック）: 550Wクランプを完全撤廃し、直近キャッシュまたは蓄電池放電バランスから推計
+    if not grid_is_valid:
+        if hasattr(poll_and_log_all_data, "_hems_cache") and "grid_w" in poll_and_log_all_data._hems_cache:
+            grid_w = poll_and_log_all_data._hems_cache["grid_w"]
+        else:
+            # 直近キャッシュもない初回通信断時: 蓄電池が放電中なら買電0W、それ以外は待機電力ベース
+            grid_w = max(0, 150 - pv_w + batt_w)
 
-    # 各部屋・分電盤回路の消費電力(W)推計・割り当て
-    total_load_w = max(180, pv_w - batt_w + grid_w)
+    # 💡 宅内消費電力 (W) の正確な物理算定（電力量保存則）
+    # 宅内負荷 = PV発電(W) - 蓄電池電力(W, 充電+, 放電-) + 買電(W, 買電+, 売電-)
+    # 例: PV 0W, 蓄電池 -300W(放電), 買電 0W -> 0 - (-300) + 0 = 300W (深夜の低負荷もリアルに追従)
+    # 最小下限は宅内基盤待機電力レベルの 50W に設定 (550W / 180W クランプを撤廃)
+    total_load_w = max(50, pv_w - batt_w + grid_w)
     
     if direct_rooms and len(direct_rooms) >= 2:
         living_w = round(direct_rooms.get("リビング", total_load_w * 0.35), 1)
